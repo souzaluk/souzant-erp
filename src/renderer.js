@@ -103,7 +103,7 @@ function refLabel(entity, code) {
 
 function cellHtml(f, row) {
   const v = row[f.key];
-  if (f.type === 'status') return v === 'A' ? '<span class="badge on">A - Ativo</span>' : '<span class="badge off">I - Inativo</span>';
+  if (f.type === 'status') return v === 'A' ? '<span class="badge on">Ativo</span>' : '<span class="badge off">Inativo</span>';
   if (f.type === 'ref') return refLabel(f.ref, v);
   return esc(v);
 }
@@ -148,7 +148,7 @@ function openForm(key, row) {
     } else if (f.type === 'code') {
       input = `<input id="${id}" value="${esc(val)}" maxlength="20" ${editing ? 'disabled' : ''} autocomplete="off">`;
     } else if (f.type === 'status') {
-      input = `<select id="${id}"><option value="A"${val !== 'I' ? ' selected' : ''}>A - Ativo</option><option value="I"${val === 'I' ? ' selected' : ''}>I - Inativo</option></select>`;
+      input = `<select id="${id}"><option value="A"${val !== 'I' ? ' selected' : ''}>Ativo</option><option value="I"${val === 'I' ? ' selected' : ''}>Inativo</option></select>`;
     } else if (f.type === 'ref') {
       input = `<input id="${id}" inputmode="numeric" value="${esc(val)}" autocomplete="off"><small class="hint" id="${id}-hint"></small>`;
     } else {
