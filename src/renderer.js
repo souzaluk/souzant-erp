@@ -93,8 +93,70 @@ const screens = {
   '/cadastro/montadoras': { path: 'Cadastro', title: 'Montadoras', entity: 'montadoras' },
   '/cadastro/pecas': { path: 'Cadastro', title: 'Peças', entity: 'pecas' },
   '/cadastro/postos-de-trabalho': { path: 'Cadastro', title: 'Postos de trabalho', entity: 'postos' },
-  '/cadastro/projetos': { path: 'Cadastro', title: 'Projetos', entity: 'projetos' }
+  '/cadastro/projetos': { path: 'Cadastro', title: 'Projetos', entity: 'projetos' },
+  '/perfil': { path: 'Conta', title: 'Perfil', profile: true }
 };
+
+// ---------- Perfil ----------
+const profileStore = {
+  get() { try { return JSON.parse(localStorage.getItem('souzant:profile')) || {}; } catch { return {}; } },
+  set(p) { localStorage.setItem('souzant:profile', JSON.stringify(p)); }
+};
+setAvatar(profileStore.get().foto || null);
+
+function profileHtml() {
+  return `<div class="breadcrumb">Conta</div><h1>Meu perfil</h1>` +
+    `<div class="card profile-card"><div><div class="profile-photo" id="pf-photo"></div>` +
+    `<div class="photo-actions"><button class="btn ghost" id="pf-pick" type="button">Alterar foto</button>` +
+    `<button class="link danger" id="pf-remove" type="button">Remover</button></div>` +
+    `<input type="file" id="pf-file" accept="image/*" hidden></div>` +
+    `<form class="profile-form" id="pf-form" novalidate><label class="field"><span>Nome</span>` +
+    `<input id="pf-nome" maxlength="80" autocomplete="off"></label>` +
+    `<div class="error" id="pf-msg" role="status"></div><button class="btn" type="submit">Salvar</button></form></div>`;
+}
+
+function mountProfile() {
+  const p = profileStore.get();
+  const photo = document.getElementById('pf-photo');
+  const nome = document.getElementById('pf-nome');
+  const paint = () => {
+    const f = profileStore.get().foto;
+    photo.innerHTML = f ? `<img src="${f}" alt="">` : '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg>';
+    setAvatar(f || null);
+  };
+  nome.value = p.nome || '';
+  nome.addEventListener('input', () => {
+    const pos = nome.selectionStart, before = nome.value.length;
+    nome.value = cleanName(nome.value);
+    const q = Math.max(0, pos - (before - nome.value.length));
+    nome.setSelectionRange(q, q);
+  });
+  paint();
+  const file = document.getElementById('pf-file');
+  document.getElementById('pf-pick').addEventListener('click', () => file.click());
+  document.getElementById('pf-remove').addEventListener('click', () => { profileStore.set({ ...profileStore.get(), foto: null }); paint(); });
+  file.addEventListener('change', () => {
+    const f = file.files[0];
+    if (!f) return;
+    const img = new Image();
+    img.onload = () => { // recorta em quadrado e reduz para 256px
+      const s = Math.min(img.width, img.height), c = document.createElement('canvas');
+      c.width = c.height = 256;
+      c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 256, 256);
+      profileStore.set({ ...profileStore.get(), foto: c.toDataURL('image/jpeg', 0.85) });
+      URL.revokeObjectURL(img.src);
+      paint();
+    };
+    img.src = URL.createObjectURL(f);
+    file.value = '';
+  });
+  document.getElementById('pf-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    profileStore.set({ ...profileStore.get(), nome: cleanName(nome.value, true) });
+    nome.value = cleanName(nome.value, true);
+    document.getElementById('pf-msg').textContent = 'Perfil salvo.';
+  });
+}
 
 function refLabel(entity, code) {
   const r = db.all(entity).find((x) => String(x.codigo) === String(code));
@@ -290,6 +352,7 @@ function render() {
   const s = screens[active];
   if (!s) view.innerHTML = '<h1>Bem-vindo ao Souzant ERP</h1>';
   else if (s.entity) { view.innerHTML = entityHtml(s.entity); mountEntity(s.entity); }
+  else if (s.profile) { view.innerHTML = profileHtml(); mountProfile(); }
   else view.innerHTML = placeholderHtml(s);
 }
 
@@ -319,4 +382,36 @@ document.querySelector('.menu').addEventListener('click', (e) => {
   openTab(a.getAttribute('href').slice(1));
 });
 document.getElementById('home-link').addEventListener('click', (e) => { e.preventDefault(); openTab(HOME.route); });
+
+// ---------- Menu do avatar e layout (superior/lateral) ----------
+const avatarBtn = document.getElementById('avatar');
+const profileMenu = document.getElementById('profile-menu');
+const layoutBtn = document.getElementById('menu-layout');
+const menuNav = document.querySelector('.menu');
+const sideEl = document.getElementById('side');
+const logoLink = document.querySelector('.logo-link');
+
+function toggleProfileMenu(open) {
+  profileMenu.hidden = !open;
+  avatarBtn.setAttribute('aria-expanded', String(open));
+}
+
+function applyLayout(mode) {
+  const side = mode === 'side';
+  if (side) { sideEl.appendChild(menuNav); } else { logoLink.after(menuNav); }
+  sideEl.hidden = !side;
+  document.body.classList.toggle('side-mode', side);
+  layoutBtn.textContent = side ? 'Menu superior' : 'Menu lateral';
+  try { localStorage.setItem('souzant:layout', mode); } catch { /* sem armazenamento */ }
+}
+
+avatarBtn.addEventListener('click', (e) => { e.stopPropagation(); toggleProfileMenu(profileMenu.hidden); });
+document.addEventListener('click', (e) => { if (!profileMenu.contains(e.target)) toggleProfileMenu(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') toggleProfileMenu(false); });
+document.getElementById('menu-profile').addEventListener('click', () => { toggleProfileMenu(false); openTab('/perfil'); });
+layoutBtn.addEventListener('click', () => { toggleProfileMenu(false); applyLayout(sideEl.hidden ? 'side' : 'top'); });
+
+let savedLayout = 'top';
+try { savedLayout = localStorage.getItem('souzant:layout') || 'top'; } catch { /* padrão */ }
+applyLayout(savedLayout);
 render();

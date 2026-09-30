@@ -69,3 +69,28 @@ th.actions,td.actions{width:1%;white-space:nowrap;text-align:right}
 .form-actions{display:flex;justify-content:flex-end;gap:10px}
 .btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--border)}
 .btn.ghost:hover{background:var(--bg)}
+
+/* Perfil (dropdown do avatar) */
+.profile{justify-self:end;position:relative}
+.profile-menu{position:absolute;right:0;top:calc(100% + 8px);min-width:190px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(6,54,99,.12);z-index:20}
+.profile-menu[hidden]{display:none}
+.profile-menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:10px 14px;border-radius:8px;font:inherit;font-weight:600;color:var(--navy);cursor:pointer}
+.profile-menu button:hover{background:#EAFBFD;color:var(--navy-2)}
+
+/* Barra lateral */
+.shell{display:flex;align-items:stretch;min-height:calc(100vh - 110px)}
+.shell .content{flex:1;min-width:0}
+.side{width:230px;flex:none;background:#fff;border-right:1px solid var(--border);padding:12px 8px}
+.side[hidden]{display:none}
+.side .menu>ul{flex-direction:column;gap:2px}
+.side .menu .sub{top:0;left:100%;margin-left:4px}
+.side .menu>ul>.has-sub>span::after{content:"›";float:right;color:var(--cyan-dark);font-size:1em;margin-left:16px}
+
+/* Perfil (tela) */
+.profile-card{display:flex;gap:24px;align-items:flex-start;max-width:640px}
+.profile-photo{width:112px;height:112px;border-radius:50%;border:3px solid var(--cyan);background:#EAFBFD;overflow:hidden;display:grid;place-items:center;flex:none}
+.profile-photo img{width:100%;height:100%;object-fit:cover}
+.profile-photo svg{width:56px;height:56px;fill:var(--navy-2)}
+.profile-form{flex:1}
+.photo-actions{display:flex;gap:10px;margin:14px 0 4px}
+.side-mode .topbar{grid-template-columns:1fr auto}
