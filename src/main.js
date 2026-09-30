@@ -4,6 +4,11 @@ const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
 
 autoUpdater.logger = log;
+// O provider 'github' recebe HTTP 406 ao consultar releases/latest; usa o download direto do latest.yml
+autoUpdater.setFeedURL({
+  provider: 'generic',
+  url: 'https://github.com/souzaluk/souzant-erp/releases/latest/download'
+});
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
