@@ -1,4 +1,15 @@
 <!doctype html>
 <html lang="pt-BR"><head><meta charset="utf-8"><title>Souzant ERP</title>
-<style>body{font-family:Segoe UI,sans-serif;display:grid;place-items:center;height:100vh;margin:0;background:#111827;color:#f9fafb}</style>
-</head><body><h1>Souzant ERP v1.0.3</h1></body></html>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<link rel="stylesheet" href="styles.css">
+</head><body>
+<header class="topbar">
+  <img class="logo" src="assets/logo.png" alt="Souzant">
+  <button class="avatar" id="avatar" title="Perfil" aria-label="Perfil do usuário">
+    <img id="avatar-img" alt="" hidden>
+    <svg id="avatar-fallback" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg>
+  </button>
+</header>
+<main class="content"><h1>Bem-vindo ao Souzant ERP</h1></main>
+<script src="renderer.js"></script>
+</body></html>
