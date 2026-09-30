@@ -4,7 +4,7 @@
 <link rel="stylesheet" href="styles.css">
 </head><body>
 <header class="topbar">
-  <a class="logo-link" href="#/" aria-label="Início"><img class="logo" src="assets/logo.png" alt="Souzant"></a>
+  <a class="logo-link" href="#" id="home-link" aria-label="Início"><img class="logo" src="assets/logo.png" alt="Souzant"></a>
   <nav class="menu" aria-label="Menu principal">
     <ul>
       <li class="has-sub"><span tabindex="0">Análise</span>
@@ -37,6 +37,7 @@
     <svg id="avatar-fallback" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg>
   </button>
 </header>
+<div class="tabs" id="tabs" role="tablist"></div>
 <main class="content" id="view"></main>
 <script src="renderer.js"></script>
 </body></html>
