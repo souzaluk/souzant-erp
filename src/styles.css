@@ -96,7 +96,8 @@ th.actions,td.actions{width:1%;white-space:nowrap;text-align:right}
 .side-mode .topbar{grid-template-columns:1fr auto}
 
 /* Menu lateral: acordeão com ícones */
-.menu .ico{display:none}
+.menu .ico{display:block;width:18px;height:18px;fill:currentColor;flex:none}
+.menu>ul>.has-sub>span{display:flex;align-items:center;gap:8px}
 .menu span b{font-weight:inherit}
 .side{width:248px;padding:14px 10px}
 .side .menu .ico{display:block;width:20px;height:20px;fill:currentColor;flex:none}
