@@ -4,12 +4,39 @@
 <link rel="stylesheet" href="styles.css">
 </head><body>
 <header class="topbar">
-  <img class="logo" src="assets/logo.png" alt="Souzant">
+  <a class="logo-link" href="#/" aria-label="Início"><img class="logo" src="assets/logo.png" alt="Souzant"></a>
+  <nav class="menu" aria-label="Menu principal">
+    <ul>
+      <li class="has-sub"><span tabindex="0">Análise</span>
+        <ul class="sub">
+          <li class="has-sub"><span tabindex="0">Dashboard</span>
+            <ul class="sub">
+              <li><a href="#/analise/dashboard/nao-conformidades">Não Conformidades</a></li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+      <li class="has-sub"><span tabindex="0">Apontamento</span>
+        <ul class="sub">
+          <li><a href="#/apontamento/inspecoes-reprovas">Inspeções/Reprovas</a></li>
+        </ul>
+      </li>
+      <li class="has-sub"><span tabindex="0">Cadastro</span>
+        <ul class="sub">
+          <li><a href="#/cadastro/colaboradores">Colaboradores</a></li>
+          <li><a href="#/cadastro/montadoras">Montadoras</a></li>
+          <li><a href="#/cadastro/pecas">Peças</a></li>
+          <li><a href="#/cadastro/postos-de-trabalho">Postos de trabalho</a></li>
+          <li><a href="#/cadastro/projetos">Projetos</a></li>
+        </ul>
+      </li>
+    </ul>
+  </nav>
   <button class="avatar" id="avatar" title="Perfil" aria-label="Perfil do usuário">
     <img id="avatar-img" alt="" hidden>
     <svg id="avatar-fallback" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z"/></svg>
   </button>
 </header>
-<main class="content"><h1>Bem-vindo ao Souzant ERP</h1></main>
+<main class="content" id="view"></main>
 <script src="renderer.js"></script>
 </body></html>
