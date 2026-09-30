@@ -12,9 +12,9 @@ setAvatar(null);
 // ---------- Utilitários ----------
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// Remove caracteres especiais (mantém letras, números e espaço) e capitaliza cada palavra.
+// Remove acentos e caracteres especiais (mantém letras A-Z, números e espaço) e capitaliza cada palavra.
 function cleanName(v, final = false) {
-  let s = String(v).replace(/[^\p{L}\p{N} ]/gu, '').replace(/ {2,}/g, ' ').replace(/^ /, '');
+  let s = String(v).normalize('NFD').replace(/\p{M}/gu, '').replace(/[^A-Za-z0-9 ]/g, '').replace(/ {2,}/g, ' ').replace(/^ /, '');
   s = s.toLowerCase().replace(/(^| )(\p{L})/gu, (_, sp, ch) => sp + ch.toUpperCase());
   return final ? s.trim() : s;
 }
