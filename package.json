@@ -23,7 +23,7 @@
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },
-    "publish": [{ "provider": "github", "owner": "souzaluk", "repo": "souzant-erp" }]
+    "publish": [{ "provider": "github", "owner": "souzaluk", "repo": "souzant-erp", "releaseType": "release" }]
   },
   "dependencies": {
     "electron-log": "^5.2.0",
