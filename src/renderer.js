@@ -349,11 +349,21 @@ function render() {
     }
     tabsEl.appendChild(el);
   }
+  markCurrent();
   const s = screens[active];
   if (!s) view.innerHTML = '<h1>Bem-vindo ao Souzant ERP</h1>';
   else if (s.entity) { view.innerHTML = entityHtml(s.entity); mountEntity(s.entity); }
   else if (s.profile) { view.innerHTML = profileHtml(); mountProfile(); }
   else view.innerHTML = placeholderHtml(s);
+}
+
+// Destaca o item do menu da tela ativa e, na barra lateral, abre os grupos que o contêm
+function markCurrent() {
+  document.querySelectorAll('.menu a').forEach((a) => {
+    const on = a.getAttribute('href').slice(1) === active;
+    a.classList.toggle('current', on);
+    if (on) for (let li = a.closest('li.has-sub'); li; li = li.parentElement.closest('li.has-sub')) li.classList.add('open');
+  });
 }
 
 function activate(route) { active = route; render(); }
@@ -372,6 +382,21 @@ function closeTab(route) {
   if (active === route) active = tabs[Math.min(i, tabs.length - 1)].route;
   render();
 }
+
+// Barra lateral: clicar num grupo expande/recolhe (acordeão entre irmãos)
+function toggleGroup(li) {
+  const open = !li.classList.contains('open');
+  li.parentElement.querySelectorAll(':scope > li.open').forEach((x) => x.classList.remove('open'));
+  li.classList.toggle('open', open);
+}
+document.querySelector('.menu').addEventListener('click', (e) => {
+  const grp = e.target.closest('li.has-sub > span');
+  if (grp && document.getElementById('side').contains(grp)) { toggleGroup(grp.parentElement); return; }
+});
+document.querySelector('.menu').addEventListener('keydown', (e) => {
+  const grp = e.target.closest && e.target.closest('li.has-sub > span');
+  if ((e.key === 'Enter' || e.key === ' ') && grp && document.getElementById('side').contains(grp)) { e.preventDefault(); toggleGroup(grp.parentElement); }
+});
 
 // Links do menu abrem (ou ativam) uma aba
 document.querySelector('.menu').addEventListener('click', (e) => {
@@ -402,6 +427,7 @@ function applyLayout(mode) {
   sideEl.hidden = !side;
   document.body.classList.toggle('side-mode', side);
   layoutBtn.textContent = side ? 'Menu superior' : 'Menu lateral';
+  if (typeof markCurrent === 'function') markCurrent();
   try { localStorage.setItem('souzant:layout', mode); } catch { /* sem armazenamento */ }
 }
 

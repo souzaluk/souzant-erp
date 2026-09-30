@@ -94,3 +94,19 @@ th.actions,td.actions{width:1%;white-space:nowrap;text-align:right}
 .profile-form{flex:1}
 .photo-actions{display:flex;gap:10px;margin:14px 0 4px}
 .side-mode .topbar{grid-template-columns:1fr auto}
+
+/* Menu lateral: acordeão com ícones */
+.menu .ico{display:none}
+.menu span b{font-weight:inherit}
+.side{width:248px;padding:14px 10px}
+.side .menu .ico{display:block;width:20px;height:20px;fill:currentColor;flex:none}
+.side .menu span{display:flex;align-items:center;gap:12px;padding:12px 14px;font-size:.95rem}
+.side .menu span::after{content:"›" !important;float:none !important;margin:0 0 0 auto !important;font-size:1.2em !important;color:var(--muted) !important;transition:transform .15s}
+.side .menu .has-sub.open>span::after{transform:rotate(90deg)}
+.side .menu .has-sub.open>span{color:var(--navy-2)}
+.side .menu .sub,.side .menu .sub .sub{display:none;position:static;min-width:0;margin:2px 0 4px 22px;padding:0 0 0 10px;border:0;border-left:2px solid var(--border);border-radius:0;box-shadow:none;background:none}
+.side .menu .has-sub:hover>.sub,.side .menu .has-sub:focus-within>.sub{display:none}
+.side .menu .has-sub.open>.sub{display:block}
+.side .menu .sub a,.side .menu .sub span{padding:9px 12px;font-weight:500;font-size:.9rem}
+.side .menu a.current{background:#EAFBFD;color:var(--navy-2);font-weight:700;box-shadow:inset 3px 0 0 var(--cyan)}
+.menu a.current{color:var(--navy-2)}
