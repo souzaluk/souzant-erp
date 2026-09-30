@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Souzant ERP</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<style>
+:root{--navy:#063663;--navy-2:#083F78;--cyan:#03D9EE;--border:#E1E8F0;--muted:#5B7089}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"Segoe UI",sans-serif;color:var(--navy);background:#fff;border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 36px;-webkit-app-region:drag;user-select:none}
+img{height:48px;width:auto;margin-bottom:28px}
+.text{font-size:1.05rem;font-weight:600;margin-bottom:14px;text-align:center}
+.bar{width:100%;height:8px;border-radius:999px;background:#EAFBFD;overflow:hidden;position:relative}
+.fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--navy-2),var(--cyan));transition:width .25s ease}
+.bar.indeterminate .fill{position:absolute;width:35%;animation:slide 1.2s ease-in-out infinite}
+@keyframes slide{0%{left:-35%}100%{left:100%}}
+.detail{margin-top:10px;font-size:.8rem;color:var(--muted);min-height:1.2em;text-align:center}
+</style></head><body>
+<img src="assets/logo.png" alt="Souzant">
+<div class="text" id="text">Buscando atualizações...</div>
+<div class="bar indeterminate" id="bar"><div class="fill" id="fill"></div></div>
+<div class="detail" id="detail"></div>
+<script>
+const bar = document.getElementById('bar'), fill = document.getElementById('fill');
+window.updater.onStatus(({ text, percent, detail }) => {
+  document.getElementById('text').textContent = text;
+  document.getElementById('detail').textContent = percent == null ? (detail || '') : `${Math.round(percent)}%  ${detail || ''}`.trim();
+  if (percent == null) { bar.classList.add('indeterminate'); fill.style.width = ''; }
+  else { bar.classList.remove('indeterminate'); fill.style.width = Math.max(0, Math.min(100, percent)) + '%'; }
+});
+</script>
+</body></html>
