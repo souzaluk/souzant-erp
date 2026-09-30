@@ -423,7 +423,13 @@ function toggleProfileMenu(open) {
 
 function applyLayout(mode) {
   const side = mode === 'side';
-  if (side) { sideEl.appendChild(menuNav); } else { logoLink.after(menuNav); }
+  const topbar = document.querySelector('.topbar');
+  const profile = document.querySelector('.profile');
+  if (side) { // logo no topo da lateral, menu no meio, avatar no rodapé
+    sideEl.append(logoLink, menuNav, profile);
+  } else {
+    topbar.append(logoLink, menuNav, profile);
+  }
   sideEl.hidden = !side;
   document.body.classList.toggle('side-mode', side);
   layoutBtn.textContent = side ? 'Menu superior' : 'Menu lateral';
