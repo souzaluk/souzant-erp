@@ -121,3 +121,5 @@ th.actions,td.actions{width:1%;white-space:nowrap;text-align:right}
 .side .logo-link{padding:6px 10px 18px}
 .side .profile{margin-top:auto;padding-top:12px;border-top:1px solid var(--border);justify-self:auto}
 .side .profile-menu{top:auto;bottom:calc(100% + 8px);left:0;right:auto}
+.side .profile{align-self:stretch;justify-self:auto}
+.side .avatar{justify-self:start}

@@ -1,7 +1,7 @@
 {
   "name": "souzant-erp",
   "productName": "Souzant ERP",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "Souzant ERP - aplicativo desktop para Windows",
   "main": "src/main.js",
   "author": "souzaluk",
