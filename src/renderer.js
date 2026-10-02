@@ -383,6 +383,17 @@ function closeTab(route) {
   render();
 }
 
+// Ctrl+PageDown / Ctrl+PageUp: próxima / anterior aba (circular), como no Chrome
+document.addEventListener('keydown', (e) => {
+  if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
+  if (e.key !== 'PageDown' && e.key !== 'PageUp') return;
+  e.preventDefault();
+  if (tabs.length < 2) return;
+  const i = tabs.findIndex((t) => t.route === active);
+  const step = e.key === 'PageDown' ? 1 : -1;
+  activate(tabs[(i + step + tabs.length) % tabs.length].route);
+});
+
 // Barra lateral: clicar num grupo expande/recolhe (acordeão entre irmãos)
 function toggleGroup(li) {
   const open = !li.classList.contains('open');
