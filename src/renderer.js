@@ -62,6 +62,17 @@ const entities = {
       { key: 'montadora', label: 'Montadora', type: 'ref', ref: 'montadoras' }
     ]
   },
+  inspecoes: {
+    title: 'Inspeções/Reprovas', singular: 'inspeção',
+    fields: [
+      { key: 'codigo', label: 'Código', type: 'seq' },
+      { key: 'data', label: 'Data', type: 'date' },
+      { key: 'peca', label: 'Peça', type: 'ref', ref: 'pecas', alnum: true },
+      { key: 'posto', label: 'Posto de trabalho', type: 'ref', ref: 'postos' },
+      { key: 'colaborador', label: 'Colaborador', type: 'ref', ref: 'colaboradores' },
+      { key: 'resultado', label: 'Resultado', type: 'result' }
+    ]
+  },
   postos: {
     title: 'Postos de trabalho', singular: 'posto de trabalho',
     fields: [
@@ -82,13 +93,16 @@ const entities = {
 // Quem referencia quem (impede excluir registro em uso)
 const usedBy = {
   montadoras: [['projetos', 'montadora'], ['pecas', 'montadora']],
-  projetos: [['pecas', 'projeto']]
+  projetos: [['pecas', 'projeto']],
+  pecas: [['inspecoes', 'peca']],
+  postos: [['inspecoes', 'posto']],
+  colaboradores: [['inspecoes', 'colaborador']]
 };
 
 // ---------- Telas ----------
 const screens = {
   '/analise/dashboard/nao-conformidades': { path: 'Análise › Dashboard', title: 'Não Conformidades', dashboard: true },
-  '/apontamento/inspecoes-reprovas': { path: 'Apontamento', title: 'Inspeções/Reprovas', cols: ['Data', 'Peça', 'Posto', 'Inspetor', 'Resultado'] },
+  '/apontamento/inspecoes-reprovas': { path: 'Apontamento', title: 'Inspeções/Reprovas', entity: 'inspecoes' },
   '/cadastro/colaboradores': { path: 'Cadastro', title: 'Colaboradores', entity: 'colaboradores' },
   '/cadastro/montadoras': { path: 'Cadastro', title: 'Montadoras', entity: 'montadoras' },
   '/cadastro/pecas': { path: 'Cadastro', title: 'Peças', entity: 'pecas' },
@@ -160,20 +174,22 @@ function mountProfile() {
 
 function refLabel(entity, code) {
   const r = db.all(entity).find((x) => String(x.codigo) === String(code));
-  return r ? `${esc(code)} - ${esc(r.nome)}` : `${esc(code)}`;
+  return r ? `${esc(code)} - ${esc(r.nome ?? r.descricao)}` : `${esc(code)}`;
 }
 
 function cellHtml(f, row) {
   const v = row[f.key];
   if (f.type === 'status') return v === 'A' ? '<span class="badge on">Ativo</span>' : '<span class="badge off">Inativo</span>';
   if (f.type === 'ref') return refLabel(f.ref, v);
+  if (f.type === 'date') return esc(String(v).split('-').reverse().join('/'));
+  if (f.type === 'result') return v === 'R' ? '<span class="badge bad">Reprovado</span>' : '<span class="badge on">Aprovado</span>';
   return esc(v);
 }
 
 function entityHtml(key) {
   const e = entities[key];
   const rows = db.all(key);
-  return `<div class="breadcrumb">Cadastro</div><h1>${e.title}</h1>` +
+  return `<div class="breadcrumb">${key === 'inspecoes' ? 'Apontamento' : 'Cadastro'}</div><h1>${e.title}</h1>` +
     `<div class="toolbar"><input type="search" id="search" placeholder="Buscar em ${e.title}..." aria-label="Buscar">` +
     `<button class="btn accent" id="new">Novo</button></div>` +
     `<div class="card"><table><thead><tr>${e.fields.map((f) => `<th>${f.label}</th>`).join('')}<th class="actions"></th></tr></thead>` +
@@ -211,6 +227,10 @@ function openForm(key, row) {
       input = `<input id="${id}" value="${esc(val)}" maxlength="20" ${editing ? 'disabled' : ''} autocomplete="off">`;
     } else if (f.type === 'status') {
       input = `<select id="${id}"><option value="A"${val !== 'I' ? ' selected' : ''}>Ativo</option><option value="I"${val === 'I' ? ' selected' : ''}>Inativo</option></select>`;
+    } else if (f.type === 'date') {
+      input = `<input id="${id}" type="date" value="${esc(val || new Date().toLocaleDateString('sv'))}">`;
+    } else if (f.type === 'result') {
+      input = `<select id="${id}"><option value="A"${val !== 'R' ? ' selected' : ''}>Aprovado</option><option value="R"${val === 'R' ? ' selected' : ''}>Reprovado</option></select>`;
     } else if (f.type === 'ref') {
       input = `<input id="${id}" inputmode="numeric" value="${esc(val)}" autocomplete="off"><small class="hint" id="${id}-hint"></small>`;
     } else {
@@ -238,9 +258,9 @@ function openForm(key, row) {
     } else if (f.type === 'ref') {
       const hint = dlg.querySelector(`#f-${f.key}-hint`);
       const upd = () => {
-        el.value = el.value.replace(/\D/g, '');
+        el.value = f.alnum ? el.value.toUpperCase().replace(/[^A-Z0-9._-]/g, '') : el.value.replace(/\D/g, '');
         const r = el.value && db.all(f.ref).find((x) => String(x.codigo) === el.value);
-        hint.textContent = el.value ? (r ? r.nome : 'Código não encontrado') : '';
+        hint.textContent = el.value ? (r ? (r.nome ?? r.descricao) : 'Código não encontrado') : '';
         hint.classList.toggle('bad', !!el.value && !r);
       };
       el.addEventListener('input', upd);
@@ -309,9 +329,74 @@ function mountEntity(key) {
   });
 }
 
+// ---------- Dashboard: Não Conformidades ----------
+// Lê db.all('inspecoes'): { data: 'AAAA-MM-DD', colaborador, peca, posto (códigos), resultado: 'A' | 'R' }
+const fmtPct = (n) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+
+function gaugeSvg(pct) {
+  const a = Math.PI * (1 - pct / 100), cx = 110, cy = 100, r = 80;
+  const x = cx + r * Math.cos(a), y = cy - r * Math.sin(a);
+  const arc = (x2, y2, color) => `<path d="M${cx - r} ${cy} A${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}" fill="none" stroke="${color}" stroke-width="18" stroke-linecap="round"/>`;
+  return `<svg viewBox="0 0 220 125" class="gauge" role="img" aria-label="Reprovação ${fmtPct(pct)}">` +
+    `<path d="M${cx - r} ${cy} A${r} ${r} 0 0 1 ${cx + r} ${cy}" fill="none" stroke="#E1E8F0" stroke-width="18" stroke-linecap="round"/>` +
+    (pct > 0 ? arc(x, y, pct > 10 ? '#C0392B' : '#00B8CC') : '') +
+    `<text x="${cx}" y="${cy - 8}" text-anchor="middle" font-size="26" font-weight="700" fill="#063663">${fmtPct(pct)}</text>` +
+    `<text x="${cx - r}" y="118" text-anchor="middle" font-size="10" fill="#5B7089">0%</text>` +
+    `<text x="${cx + r}" y="118" text-anchor="middle" font-size="10" fill="#5B7089">100%</text></svg>`;
+}
+
+function lineSvg(points) { // points: [[label, value]]
+  const W = 640, H = 220, L = 36, B = 28, T = 12, R = 12;
+  const max = Math.max(1, ...points.map((p) => p[1]));
+  const step = points.length > 1 ? (W - L - R) / (points.length - 1) : 0;
+  const px = (i) => points.length > 1 ? L + i * step : (W + L - R) / 2;
+  const py = (v) => T + (H - T - B) * (1 - v / max);
+  const every = Math.ceil(points.length / 8);
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Reprovações por data">` +
+    [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(max * f)}" y2="${py(max * f)}" stroke="#E1E8F0"/><text x="${L - 6}" y="${py(max * f) + 4}" text-anchor="end" font-size="10" fill="#5B7089">${Math.round(max * f)}</text>`).join('') +
+    `<polyline fill="none" stroke="#083F78" stroke-width="2.5" points="${points.map((p, i) => `${px(i)},${py(p[1])}`).join(' ')}"/>` +
+    points.map((p, i) => `<circle cx="${px(i)}" cy="${py(p[1])}" r="4" fill="#03D9EE" stroke="#083F78" stroke-width="2"><title>${esc(p[0])}: ${p[1]}</title></circle>` +
+      (i % every === 0 ? `<text x="${px(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#5B7089">${esc(p[0])}</text>` : '')).join('') + '</svg>';
+}
+
+function barsHtml(title, items) { // items: [[nome, reprovadas]]
+  const top = items.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
+  const max = Math.max(1, ...top.map((i) => i[1]));
+  return `<div class="card"><h3>${title}</h3>` + (top.length
+    ? top.map(([n, v]) => `<div class="bar-row"><span class="bar-name" title="${esc(n)}">${esc(n)}</span><div class="bar-track"><div class="bar-fill" style="width:${(v / max) * 100}%"></div></div><b>${v}</b></div>`).join('')
+    : '<div class="empty">Sem reprovações.</div>') + '</div>';
+}
+
+function dashboardHtml() {
+  const rows = db.all('inspecoes');
+  const rej = rows.filter((r) => r.resultado === 'R');
+  const total = rows.length, rep = rej.length, apr = total - rep;
+  const name = (list, code, f = 'nome') => (db.all(list).find((x) => String(x.codigo) === String(code)) || {})[f] || `#${code}`;
+  const count = (keyFn) => {
+    const m = new Map();
+    for (const r of rej) { const k = keyFn(r); if (k != null) m.set(k, (m.get(k) || 0) + 1); }
+    return [...m];
+  };
+  const peca = (r) => db.all('pecas').find((p) => String(p.codigo) === String(r.peca));
+  const byDate = count((r) => r.data).sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([d, v]) => [d.split('-').reverse().slice(0, 2).join('/'), v]);
+  const kpi = (label, v, cls = '') => `<div class="card kpi ${cls}"><span>${label}</span><b>${v}</b></div>`;
+  return `<div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1>` +
+    `<div class="kpis">${kpi('Inspecionados', total)}${kpi('Aprovados', apr, 'ok')}${kpi('Reprovados', rep, 'bad')}</div>` +
+    `<div class="dash-top"><div class="card"><h3>Reprovações por data</h3>${byDate.length ? lineSvg(byDate) : '<div class="empty">Sem reprovações.</div>'}</div>` +
+    `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
+    `<div class="dash-bars">` +
+    barsHtml('Colaboradores', count((r) => name('colaboradores', r.colaborador))) +
+    barsHtml('Montadoras', count((r) => { const p = peca(r); return p ? name('montadoras', p.montadora) : null; })) +
+    barsHtml('Peças', count((r) => { const p = peca(r); return p ? `${p.codigo} - ${p.descricao}` : `#${r.peca}`; })) +
+    barsHtml('Postos de trabalho', count((r) => name('postos', r.posto, 'descricao'))) +
+    barsHtml('Projetos', count((r) => { const p = peca(r); return p ? name('projetos', p.projeto) : null; })) +
+    `</div>`;
+}
+
 function placeholderHtml(s) {
   const head = `<div class="breadcrumb">${s.path}</div><h1>${s.title}</h1>`;
-  if (s.dashboard) return head + '<div class="card empty">Nenhum dado de não conformidades para exibir.</div>';
+  if (s.dashboard) return dashboardHtml();
   return head +
     `<div class="toolbar"><input type="search" placeholder="Buscar em ${s.title}..." aria-label="Buscar">` +
     `<button class="btn accent">Novo apontamento</button></div>` +
