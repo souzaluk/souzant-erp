@@ -628,8 +628,8 @@ const LINE_COLORS = { insp: '#083F78', rej: '#E5554B' };
 
 // Duas linhas (Inspeções e Reprovas, cada uma com seu eixo) ou, na métrica %, uma só com o índice de reprovação.
 // Eixo de datas: pontos com `t` (0–1) ficam na posição real do tempo (dia a dia); sem `t`, espaçamento igual (ano/mês).
-function lineSvg(points, ticks) { // points: [{ key, label, tip, t, a }]; ticks (opcional): rótulos do eixo X [{ label, t }]
-  const labels = ticks || points.map((p, i) => ({ label: p.label, t: p.t, i }));
+function lineSvg(points) { // points: [{ key, label, tip, t, a }]
+  const labels = points.map((p) => ({ label: p.label, t: p.t }));
   const many = labels.length > 12;
   const W = 640, H = 250, L = 42, R = 16, T = 26, B = many ? 52 : 32;
   const rate = (a) => a.insp ? (a.rej / a.insp) * 100 : 0;
@@ -718,14 +718,9 @@ function dashInner() {
     grp.set(k, a);
   }
   const allPts = [...grp].sort((a, b) => a[0].localeCompare(b[0])).map(([k, a]) => ({ key: k, label: keyLabel(k), tip: fmtKey(k), t: null, a }));
-  // Nível Dia sem recorte: janelas de 7 ou 31 dias corridos a partir da primeira data (abre na mais recente) e eixo de tempo real
+  // Nível Dia sem recorte: janelas de 7 ou 31 dias corridos (abre na mais recente)
   const useWin = dash.level === 2 && dash.scope.length < 7;
-  let pts = allPts, ticks = null, linePager = '', winUi = '';
-  const dayTicks = (d0, d1) => { // um rótulo para cada dia do intervalo (inclusive sem inspeção), no eixo de tempo real
-    const span = (Date.parse(d1) - Date.parse(d0)) / 864e5, out = [];
-    for (let i = 0; i <= span; i++) { const d = addDays(d0, i); out.push({ label: fmtDate(d).slice(0, 5), t: span ? i / span : null }); }
-    return out;
-  };
+  let pts = allPts, linePager = '', winUi = '';
   if (useWin) {
     // Janelas contadas a partir da data mais recente, para a última página ser sempre uma janela completa
     const N = dash.win === 'week' ? 7 : 31, tN = allPts.length ? allPts[allPts.length - 1].key : '';
@@ -736,15 +731,12 @@ function dashInner() {
     dash.lpCur = lp;
     const wEnd = tN ? addDays(tN, -(nPages - 1 - lp) * N) : '', wStart = tN ? addDays(wEnd, -(N - 1)) : '';
     const win = allPts.filter((p) => dIdx(p.key) === lp);
-    pts = win.map((p) => ({ ...p, t: (Date.parse(p.key) - Date.parse(wStart)) / 864e5 / (N - 1) })); // eixo de tempo real da janela
-    if (win.length) ticks = dayTicks(wStart, wEnd);
+    pts = win; // só dias com inspeção, igualmente espaçados (sem dias em branco)
     linePager = nPages > 1
       ? `<div class="pager"><button type="button" data-lpage="-1" aria-label="Janela anterior"${lp === 0 ? ' disabled' : ''}>‹</button><span>${fmtDate(wStart)} – ${fmtDate(wEnd)}</span><button type="button" data-lpage="1" aria-label="Próxima janela"${lp === nPages - 1 ? ' disabled' : ''}>›</button></div>` : '';
     winUi = `<div class="seg" role="group" aria-label="Intervalo"><button type="button" data-win="week" class="${dash.win === 'week' ? 'on' : ''}">Semanal</button><button type="button" data-win="month" class="${dash.win === 'month' ? 'on' : ''}">Mensal</button></div>`;
   } else if (dash.level === 2 && allPts.length) {
-    const start = dash.scope + '-01', span = Number(monthEnd(dash.scope).slice(8)) - 1;
-    pts = allPts.map((p) => ({ ...p, t: (Date.parse(p.key) - Date.parse(start)) / 864e5 / Math.max(1, span) }));
-    ticks = dayTicks(start, monthEnd(dash.scope));
+    pts = allPts;
   }
   const drill = `<div class="drill" role="group" aria-label="Hierarquia de datas"><button type="button" data-drill="up" title="Subir um nível"${dash.level === 0 ? ' disabled' : ''}>↑</button>` +
     `<button type="button" data-drill="mode" title="Modo de detalhamento: clique em um ponto para detalhá-lo" class="${dash.drillMode ? 'on' : ''}"${dash.level === 2 ? ' disabled' : ''}>↓</button>` +
@@ -768,7 +760,7 @@ function dashInner() {
     `<div class="dash-top"><div class="card"><div class="card-head"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Inspeções e reprovas'} por data</h3>` +
     `<div class="legend">${dash.metric === 'pct' ? '' : `<button type="button" data-ser="insp" class="${dash.hide.insp ? 'off' : ''}"><i style="background:${LINE_COLORS.insp}"></i>Inspeções</button>`}<button type="button" data-ser="rej" class="${dash.hide.rej ? 'off' : ''}"><i style="background:${LINE_COLORS.rej}"></i>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovas'}</button></div>` +
     `${drill}${winUi}</div>` +
-    `${pts.length ? lineSvg(pts, ticks) : '<div class="empty">Sem dados para os filtros atuais.</div>'}${linePager}</div>` +
+    `${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}${linePager}</div>` +
     `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
     `<div class="dash-bars">${DIMS.map(([d, t]) => barsHtml(d, t, facts)).join('')}</div>` +
     `<p class="dash-help">Clique em um item para filtrar os demais gráficos. Ctrl+clique seleciona vários; clique de novo para remover.</p>`;
