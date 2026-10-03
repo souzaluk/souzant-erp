@@ -713,7 +713,7 @@ function dashInner() {
 
 function dashboardHtml() {
   const expand = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
-  return `<div id="dash-wrap"><div class="dash-head"><div><div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1></div>` +
+  return `<div id="dash-wrap"><div class="dash-head"><div class="dash-title"><img class="fs-logo" src="assets/logo.png" alt="Souzant"><div><div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1></div></div>` +
     `<button type="button" class="btn ghost fs-btn" id="fs-btn">${expand}<span>${document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia'}</span></button></div>` +
     `<div id="dash" class="soft">${dashInner()}</div></div>`;
 }
