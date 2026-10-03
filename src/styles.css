@@ -318,3 +318,10 @@ td.actions{text-align:right;white-space:nowrap}
 .pager button{width:28px;height:28px;border:0;border-radius:9px;background:#E9EFF6;color:var(--navy);font-size:1.1rem;line-height:1;cursor:pointer;transition:background .12s}
 .pager button:hover:not(:disabled){background:#D5E2F0}
 .pager button:disabled{opacity:.35;cursor:default}
+
+/* Filtro por mês e janela do gráfico de linha */
+.dash-bar select{padding:7px 10px;border:0;border-radius:10px;background:var(--bg);font:inherit;color:var(--text);cursor:pointer}
+.dash-bar select:focus{outline:2px solid var(--cyan);background:#fff}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.card-head .seg{margin-left:0}
+.card-head .seg button{padding:5px 12px;font-size:.78rem}

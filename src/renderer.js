@@ -533,7 +533,10 @@ const fmtPct = (n) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maxi
 const fmtDate = (iso) => String(iso).split('-').reverse().join('/');
 
 const DIMS = [['colaborador', 'Colaboradores'], ['montadora', 'Montadoras'], ['peca', 'Peças'], ['posto', 'Postos de trabalho'], ['projeto', 'Projetos']];
-const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set() }, from: '', to: '', metric: 'qtd', page: {} };
+const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set() }, from: '', to: '', metric: 'qtd', page: {}, win: 'week', linePage: null, lpCur: 0 };
+const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const monthEnd = (ym) => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
+const addDays = (iso, n) => new Date(Date.parse(iso) + n * 864e5).toISOString().slice(0, 10);
 const BAR_PAGE = 3;
 const dashActive = () => !!(dash.from || dash.to || Object.values(dash.f).some((s) => s.size));
 
@@ -654,13 +657,26 @@ function dashInner() {
   const share = (v) => total ? fmtPct((v / total) * 100) : '—';
   const KPI_ICO = {"":"<path d=\"M9 3h6l1 2h3a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3zM8 12l3 3 5-6\" />","ok":"<path d=\"M5 12l5 5L20 7\" />","bad":"<path d=\"M6 6l12 12M18 6L6 18\" />"};
   const kpi = (label, v, cls, sub) => `<div class="card kpi ${cls}"><i class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${KPI_ICO[cls]}</svg></i><div><span>${label}</span><b>${v}</b><small>${sub}</small></div></div>`;
-  const pts = [...dashAgg(dashRows(facts, 'data'), 'data')].sort((a, b) => a[0].localeCompare(b[0]))
+  const allPts = [...dashAgg(dashRows(facts, 'data'), 'data')].sort((a, b) => a[0].localeCompare(b[0]))
     .map(([k, a]) => ({ key: k, label: fmtDate(k).slice(0, 5), a }));
+  // Janelas de 7 ou 31 dias corridos a partir da primeira data; abre na mais recente
+  const N = dash.win === 'week' ? 7 : 31, t0 = allPts.length ? allPts[0].key : '';
+  const dIdx = (iso) => Math.floor((Date.parse(iso) - Date.parse(t0)) / 864e5 / N);
+  const nPages = allPts.length ? dIdx(allPts[allPts.length - 1].key) + 1 : 1;
+  const lp = dash.linePage == null ? nPages - 1 : Math.max(0, Math.min(dash.linePage, nPages - 1));
+  dash.lpCur = lp;
+  const pts = allPts.filter((p) => dIdx(p.key) === lp);
+  const wStart = t0 ? addDays(t0, lp * N) : '', wEnd = t0 ? addDays(t0, lp * N + N - 1) : '';
+  const linePager = nPages > 1
+    ? `<div class="pager"><button type="button" data-lpage="-1" aria-label="Janela anterior"${lp === 0 ? ' disabled' : ''}>‹</button><span>${fmtDate(wStart)} – ${fmtDate(wEnd)}</span><button type="button" data-lpage="1" aria-label="Próxima janela"${lp === nPages - 1 ? ' disabled' : ''}>›</button></div>` : '';
+  const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
+  const curMonth = months.find((m) => dash.from === m + '-01' && dash.to === monthEnd(m)) || '';
+  const monthSel = `<label>Mês <select id="d-month"><option value="">Todos os meses</option>${months.map((m) => `<option value="${m}"${m === curMonth ? ' selected' : ''}>${MONTHS[Number(m.slice(5)) - 1]}/${m.slice(0, 4)}</option>`).join('')}</select></label>`;
   const chips = [...(dash.from || dash.to ? [['range', `Período: ${dash.from ? fmtDate(dash.from) : '…'} a ${dash.to ? fmtDate(dash.to) : '…'}`]] : []),
     ...[['data', 'Data'], ...DIMS.map(([d, t]) => [d, t])].filter(([d]) => dash.f[d].size)
       .map(([d, t]) => [d, `${t}: ${[...dash.f[d]].map((v) => (d === 'data' ? fmtDate(v) : v)).join(', ')}`])];
   return `<div class="dash-bar">` +
-    `<label>De <input type="date" id="d-from" value="${esc(dash.from)}" min="${dates[0]}" max="${dates[dates.length - 1]}"></label>` +
+    `${monthSel}<label>De <input type="date" id="d-from" value="${esc(dash.from)}" min="${dates[0]}" max="${dates[dates.length - 1]}"></label>` +
     `<label>até <input type="date" id="d-to" value="${esc(dash.to)}" min="${dates[0]}" max="${dates[dates.length - 1]}"></label>` +
     `<div class="seg" role="group" aria-label="Métrica"><button type="button" data-metric="qtd" class="${dash.metric === 'qtd' ? 'on' : ''}">Qtde reprovada</button>` +
     `<button type="button" data-metric="pct" class="${dash.metric === 'pct' ? 'on' : ''}">% de reprovação</button></div>` +
@@ -668,7 +684,9 @@ function dashInner() {
     `</div>` +
     (chips.length ? `<div class="chips">${chips.map(([d, t]) => `<span class="chip">${esc(t)}<button type="button" data-clear="${d}" aria-label="Remover filtro">×</button></span>`).join('')}</div>` : '') +
     `<div class="kpis">${kpi('Inspecionados', total, '', 'no filtro atual')}${kpi('Aprovados', apr, 'ok', share(apr) + ' do total')}${kpi('Reprovados', rep, 'bad', share(rep) + ' do total')}</div>` +
-    `<div class="dash-top"><div class="card"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovações'} por data</h3>${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}</div>` +
+    `<div class="dash-top"><div class="card"><div class="card-head"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovações'} por data</h3>` +
+    `<div class="seg" role="group" aria-label="Intervalo"><button type="button" data-win="week" class="${dash.win === 'week' ? 'on' : ''}">Semanal</button><button type="button" data-win="month" class="${dash.win === 'month' ? 'on' : ''}">Mensal</button></div></div>` +
+    `${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}${linePager}</div>` +
     `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
     `<div class="dash-bars">${DIMS.map(([d, t]) => barsHtml(d, t, facts)).join('')}</div>` +
     `<p class="dash-help">Clique em um item para filtrar os demais gráficos. Ctrl+clique seleciona vários; clique de novo para remover.</p>`;
@@ -691,12 +709,15 @@ function mountDashboard() {
     update();
   };
   root.addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-dim],[data-metric],[data-clear],[data-page]');
+    const t = ev.target.closest('[data-dim],[data-metric],[data-clear],[data-page],[data-win],[data-lpage]');
     if (!t) return;
+    if (t.dataset.win) { dash.win = t.dataset.win; dash.linePage = null; update(); return; }
+    if (t.dataset.lpage) { dash.linePage = dash.lpCur + Number(t.dataset.lpage); update(); return; }
     if (t.dataset.page) { dash.page[t.dataset.page] = (dash.page[t.dataset.page] || 0) + Number(t.dataset.d); update(); return; }
     if (t.dataset.metric) { dash.metric = t.dataset.metric; update(); }
     else if (t.dataset.clear) {
       const c = t.dataset.clear;
+      dash.linePage = null;
       if (c === 'all') { dash.from = dash.to = ''; Object.values(dash.f).forEach((s) => s.clear()); }
       else if (c === 'range') dash.from = dash.to = '';
       else dash.f[c].clear();
@@ -708,6 +729,8 @@ function mountDashboard() {
     if (t && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); pick(t, ev.ctrlKey || ev.metaKey); }
   });
   root.addEventListener('change', (ev) => {
+    dash.linePage = null;
+    if (ev.target.id === 'd-month') { const v = ev.target.value; dash.from = v ? v + '-01' : ''; dash.to = v ? monthEnd(v) : ''; update(); return; }
     if (ev.target.id === 'd-from') dash.from = ev.target.value;
     else if (ev.target.id === 'd-to') dash.to = ev.target.value;
     else return;
