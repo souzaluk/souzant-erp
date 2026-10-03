@@ -384,3 +384,9 @@ td.actions{text-align:right;white-space:nowrap}
 .pt .xh{opacity:0;pointer-events:none}
 .pt:hover .xh,.pt:focus-visible .xh{opacity:1}
 .card-head{flex-wrap:wrap}
+
+/* Gráfico de linha ocupa toda a largura (e a altura em tela cheia) do cartão */
+.line-box{position:relative;width:100%}
+.line-box .chart{display:block;width:100%;height:auto}
+#dash-wrap:fullscreen .line-box{flex:1;min-height:0}
+#dash-wrap:fullscreen .line-box .chart{position:absolute;inset:0;width:100%;height:100%}

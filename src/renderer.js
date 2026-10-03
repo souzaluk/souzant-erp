@@ -533,7 +533,7 @@ const fmtPct = (n) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maxi
 const fmtDate = (iso) => String(iso).split('-').reverse().join('/');
 
 const DIMS = [['colaborador', 'Colaboradores'], ['montadora', 'Montadoras'], ['peca', 'Peças'], ['posto', 'Postos de trabalho'], ['projeto', 'Projetos'], ['defeito', 'Defeitos']];
-const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set(), defeito: new Set() }, from: '', to: '', metric: 'qtd', page: {}, win: 'week', linePage: null, lpCur: 0, level: 2, scope: '', drillMode: false, hide: { insp: false, rej: false } };
+const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set(), defeito: new Set() }, from: '', to: '', metric: 'qtd', page: {}, win: 'week', linePage: null, lpCur: 0, lw: 0, lh: 0, level: 2, scope: '', drillMode: false, hide: { insp: false, rej: false } };
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 // Hierarquia de datas (como no Power BI): 0 = Ano, 1 = Mês, 2 = Dia
 const LEVELS = ['Ano', 'Mês', 'Dia'];
@@ -631,7 +631,7 @@ const LINE_COLORS = { insp: '#083F78', rej: '#E5554B' };
 function lineSvg(points) { // points: [{ key, label, tip, t, a }]
   const labels = points.map((p) => ({ label: p.label, t: p.t }));
   const many = labels.length > 12;
-  const W = 640, H = 250, L = 42, R = 16, T = 26, B = many ? 52 : 32;
+  const W = dash.lw || 640, H = Math.max(170, dash.lh || 250), L = 42, R = 16, T = 26, B = many ? 52 : 32; // W/H = tamanho real do contêiner (o SVG ocupa toda a largura)
   const rate = (a) => a.insp ? (a.rej / a.insp) * 100 : 0;
   const series = (dash.metric === 'pct'
     ? [{ id: 'rej', color: LINE_COLORS.rej, vals: points.map((p) => rate(p.a)), fmt: fmtPct, tick: (v) => Math.round(v) + '%' }]
@@ -651,7 +651,7 @@ function lineSvg(points) { // points: [{ key, label, tip, t, a }]
   const xs = points.map((p, i) => px(i));
   const colW = Math.max(22, n > 1 ? Math.min(...xs.slice(1).map((x, i) => x - xs[i])) : 22);
   const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(series[0].max * f, series[0])}" y2="${py(series[0].max * f, series[0])}" stroke="#E8EEF5" stroke-dasharray="3 5"/>`).join('');
-  const axes = [0, 0.5, 1].map((f) => `<text x="${L - 8}" y="${py(max * f, series[0]) + 4}" text-anchor="end" font-size="10" fill="#8A9BB0">${series[0].tick(max * f)}</text>`).join('');
+  const axes = [0, 0.5, 1].map((f) => `<text x="${L - 8}" y="${py(max * f, series[0]) + 4}" text-anchor="end" font-size="11" fill="#8A9BB0">${series[0].tick(max * f)}</text>`).join('');
   const lines = n > 1 ? series.map((s, k) => {
     const pts = points.map((p, i) => [xs[i], py(s.vals[i], s)]);
     const d = smoothPath(pts, T, base);
@@ -667,7 +667,7 @@ function lineSvg(points) { // points: [{ key, label, tip, t, a }]
     const marks = series.map((s, k) => {
       const ly = close && k !== upper ? ys[k] + 16 : ys[k] - 9;
       return `<circle cx="${x}" cy="${ys[k]}" r="${on ? 5 : 3.5}" fill="${on ? s.color : '#fff'}" stroke="${s.color}" stroke-width="2.2"/>` +
-        `<text x="${x}" y="${ly}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${s.color}">${esc(s.fmt(s.vals[i]))}</text>`;
+        `<text x="${x}" y="${ly}" text-anchor="middle" font-size="10.5" font-weight="700" fill="${s.color}">${esc(s.fmt(s.vals[i]))}</text>`;
     }).join('');
     return `<g data-dim="data" data-key="${esc(p.key)}" data-tip="${esc(dashTip(p.tip, p.a))}" class="pt${on ? ' sel' : ''}${any && !on ? ' dim' : ''}" tabindex="0" role="button">` +
       `<rect class="col" x="${x - colW / 2}" y="${T - 14}" width="${colW}" height="${base - T + 14}" fill="${on ? 'rgba(3,217,238,.12)' : 'transparent'}"/>` +
@@ -676,8 +676,8 @@ function lineSvg(points) { // points: [{ key, label, tip, t, a }]
   const xl = labels.map((lb, k) => {
     const x = lb.t != null ? L + IN + lb.t * (W - L - R - 2 * IN) : labels.length > 1 ? L + IN + (k / (labels.length - 1)) * (W - L - R - 2 * IN) : (W + L - R) / 2;
     return many
-      ? `<text x="${x}" y="${base + 14}" text-anchor="end" font-size="9.5" fill="#8A9BB0" transform="rotate(-45 ${x} ${base + 14})">${esc(lb.label)}</text>`
-      : `<text x="${x}" y="${base + 18}" text-anchor="middle" font-size="10" fill="#8A9BB0">${esc(lb.label)}</text>`;
+      ? `<text x="${x}" y="${base + 14}" text-anchor="end" font-size="10.5" fill="#8A9BB0" transform="rotate(-45 ${x} ${base + 14})">${esc(lb.label)}</text>`
+      : `<text x="${x}" y="${base + 18}" text-anchor="middle" font-size="11" fill="#8A9BB0">${esc(lb.label)}</text>`;
   }).join('');
   return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Inspeções e reprovas por data">${defs}${grid}${axes}${lines}${cols}${xl}</svg>`;
 }
@@ -760,7 +760,7 @@ function dashInner() {
     `<div class="dash-top"><div class="card"><div class="card-head"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Inspeções e reprovas'} por data</h3>` +
     `<div class="legend">${dash.metric === 'pct' ? '' : `<button type="button" data-ser="insp" class="${dash.hide.insp ? 'off' : ''}"><i style="background:${LINE_COLORS.insp}"></i>Inspeções</button>`}<button type="button" data-ser="rej" class="${dash.hide.rej ? 'off' : ''}"><i style="background:${LINE_COLORS.rej}"></i>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovas'}</button></div>` +
     `${drill}${winUi}</div>` +
-    `${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}${linePager}</div>` +
+    `<div class="line-box">${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}</div>${linePager}</div>` +
     `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
     `<div class="dash-bars">${DIMS.map(([d, t]) => barsHtml(d, t, facts)).join('')}</div>` +
     `<p class="dash-help">Clique em um item para filtrar os demais gráficos. Ctrl+clique seleciona vários; clique de novo para remover.</p>`;
@@ -787,6 +787,15 @@ function mountDashboard() {
     else document.getElementById('dash-wrap').requestFullscreen().catch(() => toast('Não foi possível abrir em tela cheia.', 'err'));
   });
   const update = () => { if (dashTipEl) dashTipEl.hidden = true; root.innerHTML = dashInner(); };
+  // Ajusta o gráfico de linha ao tamanho real do contêiner (largura sempre total; altura total em tela cheia)
+  const fit = () => {
+    const box = root.querySelector('.line-box');
+    if (!box) return;
+    const w = Math.round(box.clientWidth), h = document.fullscreenElement ? Math.round(box.clientHeight) : 250;
+    if (w > 0 && (Math.abs(w - dash.lw) > 1 || Math.abs(h - dash.lh) > 1)) { dash.lw = w; dash.lh = h; update(); }
+  };
+  new ResizeObserver(() => requestAnimationFrame(fit)).observe(root);
+  fit();
   if (!dashTipEl) { dashTipEl = document.createElement('div'); dashTipEl.className = 'dash-tip'; dashTipEl.hidden = true; document.body.appendChild(dashTipEl); }
   const pick = (el, multi) => {
     if (el.dataset.dim === 'data' && dash.drillMode && dash.level < 2) { dash.scope = el.dataset.key; dash.level++; dash.linePage = null; update(); return; }
