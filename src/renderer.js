@@ -453,19 +453,33 @@ const dashFmt = (v) => dash.metric === 'pct' ? fmtPct(v) : String(v);
 const dashTip = (label, a) => `${label}\nReprovadas: ${a.rej}\nInspecionadas: ${a.insp}\nReprovação: ${fmtPct(a.insp ? (a.rej / a.insp) * 100 : 0)}`;
 
 function gaugeSvg(pct) {
-  const a = Math.PI * (1 - pct / 100), cx = 110, cy = 100, r = 80;
+  const a = Math.PI * (1 - Math.min(pct, 100) / 100), cx = 110, cy = 100, r = 80;
   const x = cx + r * Math.cos(a), y = cy - r * Math.sin(a);
-  const arc = (x2, y2, color) => `<path d="M${cx - r} ${cy} A${r} ${r} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}" fill="none" stroke="${color}" stroke-width="18" stroke-linecap="round"/>`;
-  return `<svg viewBox="0 0 220 125" class="gauge" role="img" aria-label="Reprovação ${fmtPct(pct)}">` +
-    `<path d="M${cx - r} ${cy} A${r} ${r} 0 0 1 ${cx + r} ${cy}" fill="none" stroke="#E1E8F0" stroke-width="18" stroke-linecap="round"/>` +
-    (pct > 0 ? arc(x, y, pct > 10 ? '#C0392B' : '#00B8CC') : '') +
-    `<text x="${cx}" y="${cy - 8}" text-anchor="middle" font-size="26" font-weight="700" fill="#063663">${fmtPct(pct)}</text>` +
-    `<text x="${cx - r}" y="118" text-anchor="middle" font-size="10" fill="#5B7089">0%</text>` +
-    `<text x="${cx + r}" y="118" text-anchor="middle" font-size="10" fill="#5B7089">100%</text></svg>`;
+  const tone = pct > 10 ? ['#FF8A7A', '#E5554B'] : pct > 5 ? ['#FFD27A', '#F2A33A'] : ['#03D9EE', '#0E9F8E'];
+  const label = pct > 10 ? 'Atenção' : pct > 5 ? 'Moderado' : 'Dentro da meta';
+  return `<svg viewBox="0 0 220 135" class="gauge" role="img" aria-label="Reprovação ${fmtPct(pct)}">` +
+    `<defs><linearGradient id="g-arc" gradientUnits="userSpaceOnUse" x1="${cx - r}" y1="0" x2="${cx + r}" y2="0"><stop offset="0" stop-color="${tone[0]}"/><stop offset="1" stop-color="${tone[1]}"/></linearGradient></defs>` +
+    `<path d="M${cx - r} ${cy} A${r} ${r} 0 0 1 ${cx + r} ${cy}" fill="none" stroke="#EEF3F8" stroke-width="16" stroke-linecap="round"/>` +
+    (pct > 0 ? `<path d="M${cx - r} ${cy} A${r} ${r} 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)}" fill="none" stroke="url(#g-arc)" stroke-width="16" stroke-linecap="round"/>` : '') +
+    `<text x="${cx}" y="${cy - 12}" text-anchor="middle" font-size="28" font-weight="700" fill="#063663">${fmtPct(pct)}</text>` +
+    `<text x="${cx}" y="${cy + 6}" text-anchor="middle" font-size="10" font-weight="600" fill="${tone[1]}">${label}</text>` +
+    `<text x="${cx - r}" y="125" text-anchor="middle" font-size="9" fill="#8A9BB0">0%</text>` +
+    `<text x="${cx + r}" y="125" text-anchor="middle" font-size="9" fill="#8A9BB0">100%</text></svg>`;
+}
+
+// Curva suave (Catmull-Rom → Bézier), sem ultrapassar os limites do gráfico
+function smoothPath(pts, lo, hi) {
+  const cl = (v) => Math.max(lo, Math.min(hi, v));
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2, t = 0.18;
+    d += ` C${p1[0] + (p2[0] - p0[0]) * t},${cl(p1[1] + (p2[1] - p0[1]) * t)} ${p2[0] - (p3[0] - p1[0]) * t},${cl(p2[1] - (p3[1] - p1[1]) * t)} ${p2[0]},${p2[1]}`;
+  }
+  return d;
 }
 
 function lineSvg(points) { // points: [{ key, label, a }]
-  const W = 640, H = 220, L = 40, B = 28, T = 12, R = 12;
+  const W = 640, H = 220, L = 40, B = 28, T = 14, R = 14;
   const vals = points.map((p) => dashVal(p.a));
   const max = Math.max(1, ...vals);
   const step = points.length > 1 ? (W - L - R) / (points.length - 1) : 0;
@@ -473,15 +487,22 @@ function lineSvg(points) { // points: [{ key, label, a }]
   const py = (v) => T + (H - T - B) * (1 - v / max);
   const every = Math.ceil(points.length / 8);
   const sel = dash.f.data, any = sel.size > 0;
+  const xy = points.map((p, i) => [px(i), py(vals[i])]);
+  const base = H - B;
   return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Reprovações por data">` +
-    [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(max * f)}" y2="${py(max * f)}" stroke="#E1E8F0"/><text x="${L - 6}" y="${py(max * f) + 4}" text-anchor="end" font-size="10" fill="#5B7089">${dash.metric === 'pct' ? Math.round(max * f) + '%' : Math.round(max * f)}</text>`).join('') +
-    `<polyline fill="none" stroke="#083F78" stroke-width="2.5" points="${points.map((p, i) => `${px(i)},${py(vals[i])}`).join(' ')}"/>` +
+    `<defs><linearGradient id="g-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#03D9EE" stop-opacity=".35"/><stop offset="1" stop-color="#03D9EE" stop-opacity="0"/></linearGradient>` +
+    `<linearGradient id="g-line" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#083F78"/><stop offset="1" stop-color="#00B8CC"/></linearGradient></defs>` +
+    [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(max * f)}" y2="${py(max * f)}" stroke="#E8EEF5" stroke-dasharray="3 5"/><text x="${L - 8}" y="${py(max * f) + 4}" text-anchor="end" font-size="10" fill="#8A9BB0">${dash.metric === 'pct' ? Math.round(max * f) + '%' : Math.round(max * f)}</text>`).join('') +
+    (points.length > 1
+      ? `<path d="${smoothPath(xy, T, base)} L${xy[xy.length - 1][0]},${base} L${xy[0][0]},${base} Z" fill="url(#g-area)"/>` +
+        `<path d="${smoothPath(xy, T, base)}" fill="none" stroke="url(#g-line)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
+      : '') +
     points.map((p, i) => {
       const on = sel.has(p.key);
       return `<g data-dim="data" data-key="${esc(p.key)}" data-tip="${esc(dashTip(p.label, p.a))}" class="pt${on ? ' sel' : ''}${any && !on ? ' dim' : ''}" tabindex="0" role="button">` +
         `<circle cx="${px(i)}" cy="${py(vals[i])}" r="14" fill="transparent"/>` +
-        `<circle cx="${px(i)}" cy="${py(vals[i])}" r="${on ? 6 : 4}" fill="${on ? '#083F78' : '#03D9EE'}" stroke="#083F78" stroke-width="2"/></g>` +
-        (i % every === 0 ? `<text x="${px(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#5B7089">${esc(p.label)}</text>` : '');
+        `<circle class="dot" cx="${px(i)}" cy="${py(vals[i])}" r="${on ? 6 : 4}" fill="${on ? '#083F78' : '#fff'}" stroke="${on ? '#fff' : '#00B8CC'}" stroke-width="2.5"/></g>` +
+        (i % every === 0 ? `<text x="${px(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#8A9BB0">${esc(p.label)}</text>` : '');
     }).join('') + '</svg>';
 }
 
@@ -507,7 +528,8 @@ function dashInner() {
   const rows = dashRows(facts, null);
   const total = rows.reduce((a, f) => a + f.insp, 0), rep = rows.reduce((a, f) => a + f.rej, 0), apr = total - rep;
   const share = (v) => total ? fmtPct((v / total) * 100) : '—';
-  const kpi = (label, v, cls, sub) => `<div class="card kpi ${cls}"><span>${label}</span><b>${v}</b><small>${sub}</small></div>`;
+  const KPI_ICO = {"":"<path d=\"M9 3h6l1 2h3a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3zM8 12l3 3 5-6\" />","ok":"<path d=\"M5 12l5 5L20 7\" />","bad":"<path d=\"M6 6l12 12M18 6L6 18\" />"};
+  const kpi = (label, v, cls, sub) => `<div class="card kpi ${cls}"><i class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${KPI_ICO[cls]}</svg></i><div><span>${label}</span><b>${v}</b><small>${sub}</small></div></div>`;
   const pts = [...dashAgg(dashRows(facts, 'data'), 'data')].sort((a, b) => a[0].localeCompare(b[0]))
     .map(([k, a]) => ({ key: k, label: fmtDate(k).slice(0, 5), a }));
   const chips = [...(dash.from || dash.to ? [['range', `Período: ${dash.from ? fmtDate(dash.from) : '…'} a ${dash.to ? fmtDate(dash.to) : '…'}`]] : []),

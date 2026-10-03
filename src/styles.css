@@ -174,3 +174,44 @@ th.actions,td.actions{width:1%;white-space:nowrap;text-align:right}
 .dash-help{color:var(--muted);font-size:.8rem;margin:14px 0 0}
 .dash-tip{position:fixed;z-index:100;pointer-events:none;background:var(--navy);color:#fff;border-radius:8px;padding:8px 12px;font-size:.8rem;line-height:1.5;white-space:pre-line;box-shadow:0 6px 20px rgba(6,54,99,.3)}
 .dash-tip[hidden]{display:none}
+
+/* Dashboard: Modern SaaS / Soft UI */
+#dash{--ok:#0E9F8E;--bad:#E5554B;--soft-shadow:0 1px 2px rgba(6,54,99,.04),0 8px 24px -6px rgba(6,54,99,.08);--ring:rgba(6,54,99,.06)}
+#dash .card{border:1px solid var(--ring);border-radius:20px;padding:22px;box-shadow:var(--soft-shadow);transition:box-shadow .2s,transform .2s}
+#dash .card h3{font-size:.8rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 16px}
+#dash .empty{border-radius:14px}
+#dash .dash-bar{padding:10px 12px;background:#fff;border:1px solid var(--ring);border-radius:16px;box-shadow:var(--soft-shadow)}
+#dash .dash-bar input[type=date]{border-radius:10px;background:var(--bg);border-color:transparent;padding:7px 10px}
+#dash .dash-bar input[type=date]:focus{outline:2px solid var(--cyan);background:#fff}
+#dash .seg{background:var(--bg);border:0;border-radius:12px;padding:3px;gap:2px}
+#dash .seg button{background:transparent;border-radius:9px;color:var(--muted);font-weight:600;transition:background .15s,color .15s}
+#dash .seg button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(6,54,99,.12)}
+#dash .btn.small{border-radius:10px}
+#dash .chip{background:#fff;border:1px solid #BFEFF5;color:var(--navy-2);box-shadow:0 1px 2px rgba(6,54,99,.05)}
+#dash .kpis{gap:18px;margin-bottom:18px}
+#dash .kpi{display:flex;align-items:center;gap:16px}
+#dash .kpi:hover{transform:translateY(-2px);box-shadow:0 2px 4px rgba(6,54,99,.05),0 14px 30px -8px rgba(6,54,99,.14)}
+#dash .kpi span{font-size:.78rem;text-transform:uppercase;letter-spacing:.05em}
+#dash .kpi b{display:block;font-size:2.1rem;line-height:1.15;letter-spacing:-.02em}
+#dash .kpi-ico{flex:none;width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:#E6F0FA;color:var(--navy-2)}
+#dash .kpi.ok .kpi-ico{background:#DDF6F2;color:var(--ok)}
+#dash .kpi.bad .kpi-ico{background:#FDE7E5;color:var(--bad)}
+#dash .kpi-ico svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#dash .kpi.ok b{color:var(--ok)}
+#dash .kpi.bad b{color:var(--bad)}
+#dash .dash-top,#dash .dash-bars{gap:18px}
+#dash .dash-top{margin-bottom:18px}
+#dash .gauge-card{display:flex;flex-direction:column}
+#dash .gauge-card .gauge{margin:auto;max-width:280px}
+#dash .bar-row{grid-template-columns:120px 1fr 52px;padding:5px 6px;margin:0 -6px 2px;border-radius:10px}
+#dash .bar-row:hover{background:#F3F7FB}
+#dash .bar-track{height:10px;background:#EDF2F8;border-radius:999px;overflow:hidden}
+#dash .bar-fill{border-radius:999px;background:linear-gradient(90deg,#083F78,#2A7FC9);transition:width .3s ease}
+#dash .bar-row.sel .bar-fill{background:linear-gradient(90deg,#00B8CC,#03D9EE)}
+#dash .bar-name{color:var(--text);font-weight:500}
+#dash .bar-row b{font-weight:600;color:var(--navy)}
+#dash .pt .dot{transition:r .15s}
+#dash .pt:hover .dot{r:6}
+#dash .dash-help{text-align:center}
+.dash-tip{background:rgba(6,54,99,.94);border-radius:12px;backdrop-filter:blur(4px)}
+@media (max-width:900px){#dash .dash-top,#dash .kpis{grid-template-columns:1fr}}
