@@ -628,16 +628,19 @@ const LINE_COLORS = { insp: '#083F78', rej: '#E5554B' };
 
 // Duas linhas (Inspeções e Reprovas, cada uma com seu eixo) ou, na métrica %, uma só com o índice de reprovação.
 // Eixo de datas: pontos com `t` (0–1) ficam na posição real do tempo (dia a dia); sem `t`, espaçamento igual (ano/mês).
-function lineSvg(points) { // points: [{ key, label, tip, t, a }]
-  const many = points.length > 12;
-  const W = 640, H = 250, L = 42, R = 42, T = 26, B = many ? 52 : 32;
+function lineSvg(points, ticks) { // points: [{ key, label, tip, t, a }]; ticks (opcional): rótulos do eixo X [{ label, t }]
+  const labels = ticks || points.map((p, i) => ({ label: p.label, t: p.t, i }));
+  const many = labels.length > 12;
+  const W = 640, H = 250, L = 42, R = 16, T = 26, B = many ? 52 : 32;
   const rate = (a) => a.insp ? (a.rej / a.insp) * 100 : 0;
   const series = (dash.metric === 'pct'
     ? [{ id: 'rej', color: LINE_COLORS.rej, vals: points.map((p) => rate(p.a)), fmt: fmtPct, tick: (v) => Math.round(v) + '%' }]
     : [{ id: 'insp', color: LINE_COLORS.insp, vals: points.map((p) => p.a.insp), fmt: String, tick: (v) => Math.round(v) },
       { id: 'rej', color: LINE_COLORS.rej, vals: points.map((p) => p.a.rej), fmt: String, tick: (v) => Math.round(v) }]
   ).filter((s) => !dash.hide[s.id]);
-  series.forEach((s, k) => { s.side = k === 0 ? 'L' : 'R'; s.max = Math.max(1, ...s.vals); });
+  // Eixo único para as duas linhas, para que as alturas sejam comparáveis (323 inspeções ficam acima de 20 reprovas)
+  const max = Math.max(1, ...series.flatMap((s) => s.vals));
+  series.forEach((s) => { s.side = 'L'; s.max = max; });
   const base = H - B, IN = 16;
   const n = points.length;
   const px = (i) => n > 1 && points[i].t != null ? L + IN + points[i].t * (W - L - R - 2 * IN)
@@ -648,9 +651,7 @@ function lineSvg(points) { // points: [{ key, label, tip, t, a }]
   const xs = points.map((p, i) => px(i));
   const colW = Math.max(22, n > 1 ? Math.min(...xs.slice(1).map((x, i) => x - xs[i])) : 22);
   const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(series[0].max * f, series[0])}" y2="${py(series[0].max * f, series[0])}" stroke="#E8EEF5" stroke-dasharray="3 5"/>`).join('');
-  const axes = series.map((s) => [0, 0.5, 1].map((f) => s.side === 'L'
-    ? `<text x="${L - 8}" y="${py(s.max * f, s) + 4}" text-anchor="end" font-size="10" fill="${series.length > 1 ? s.color : '#8A9BB0'}">${s.tick(s.max * f)}</text>`
-    : `<text x="${W - R + 8}" y="${py(s.max * f, s) + 4}" text-anchor="start" font-size="10" fill="${s.color}">${s.tick(s.max * f)}</text>`).join('')).join('');
+  const axes = [0, 0.5, 1].map((f) => `<text x="${L - 8}" y="${py(max * f, series[0]) + 4}" text-anchor="end" font-size="10" fill="#8A9BB0">${series[0].tick(max * f)}</text>`).join('');
   const lines = n > 1 ? series.map((s, k) => {
     const pts = points.map((p, i) => [xs[i], py(s.vals[i], s)]);
     const d = smoothPath(pts, T, base);
@@ -670,12 +671,15 @@ function lineSvg(points) { // points: [{ key, label, tip, t, a }]
     }).join('');
     return `<g data-dim="data" data-key="${esc(p.key)}" data-tip="${esc(dashTip(p.tip, p.a))}" class="pt${on ? ' sel' : ''}${any && !on ? ' dim' : ''}" tabindex="0" role="button">` +
       `<rect class="col" x="${x - colW / 2}" y="${T - 14}" width="${colW}" height="${base - T + 14}" fill="${on ? 'rgba(3,217,238,.12)' : 'transparent'}"/>` +
-      `<line class="xh" x1="${x}" x2="${x}" y1="${T - 8}" y2="${base}" stroke="#9FB3C8" stroke-dasharray="3 3"/>${marks}</g>` +
-      (many
-        ? `<text x="${x}" y="${base + 14}" text-anchor="end" font-size="9.5" fill="#8A9BB0" transform="rotate(-45 ${x} ${base + 14})">${esc(p.label)}</text>`
-        : `<text x="${x}" y="${base + 18}" text-anchor="middle" font-size="10" fill="#8A9BB0">${esc(p.label)}</text>`);
+      `<line class="xh" x1="${x}" x2="${x}" y1="${T - 8}" y2="${base}" stroke="#9FB3C8" stroke-dasharray="3 3"/>${marks}</g>`;
   }).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Inspeções e reprovas por data">${defs}${grid}${axes}${lines}${cols}</svg>`;
+  const xl = labels.map((lb, k) => {
+    const x = lb.t != null ? L + IN + lb.t * (W - L - R - 2 * IN) : labels.length > 1 ? L + IN + (k / (labels.length - 1)) * (W - L - R - 2 * IN) : (W + L - R) / 2;
+    return many
+      ? `<text x="${x}" y="${base + 14}" text-anchor="end" font-size="9.5" fill="#8A9BB0" transform="rotate(-45 ${x} ${base + 14})">${esc(lb.label)}</text>`
+      : `<text x="${x}" y="${base + 18}" text-anchor="middle" font-size="10" fill="#8A9BB0">${esc(lb.label)}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Inspeções e reprovas por data">${defs}${grid}${axes}${lines}${cols}${xl}</svg>`;
 }
 
 function barsHtml(dim, title, facts) {
@@ -716,23 +720,31 @@ function dashInner() {
   const allPts = [...grp].sort((a, b) => a[0].localeCompare(b[0])).map(([k, a]) => ({ key: k, label: keyLabel(k), tip: fmtKey(k), t: null, a }));
   // Nível Dia sem recorte: janelas de 7 ou 31 dias corridos a partir da primeira data (abre na mais recente) e eixo de tempo real
   const useWin = dash.level === 2 && dash.scope.length < 7;
-  let pts = allPts, linePager = '', winUi = '';
+  let pts = allPts, ticks = null, linePager = '', winUi = '';
+  const dayTicks = (d0, d1) => { // um rótulo para cada dia do intervalo (inclusive sem inspeção), no eixo de tempo real
+    const span = (Date.parse(d1) - Date.parse(d0)) / 864e5, out = [];
+    for (let i = 0; i <= span; i++) { const d = addDays(d0, i); out.push({ label: fmtDate(d).slice(0, 5), t: span ? i / span : null }); }
+    return out;
+  };
   if (useWin) {
-    const N = dash.win === 'week' ? 7 : 31, t0 = allPts.length ? allPts[0].key : '';
-    const dIdx = (iso) => Math.floor((Date.parse(iso) - Date.parse(t0)) / 864e5 / N);
-    const nPages = allPts.length ? dIdx(allPts[allPts.length - 1].key) + 1 : 1;
+    // Janelas contadas a partir da data mais recente, para a última página ser sempre uma janela completa
+    const N = dash.win === 'week' ? 7 : 31, tN = allPts.length ? allPts[allPts.length - 1].key : '';
+    const fromEnd = (iso) => Math.floor((Date.parse(tN) - Date.parse(iso)) / 864e5 / N);
+    const nPages = allPts.length ? fromEnd(allPts[0].key) + 1 : 1;
+    const dIdx = (iso) => nPages - 1 - fromEnd(iso);
     const lp = dash.linePage == null ? nPages - 1 : Math.max(0, Math.min(dash.linePage, nPages - 1));
     dash.lpCur = lp;
-    const wStart = t0 ? addDays(t0, lp * N) : '', wEnd = t0 ? addDays(t0, lp * N + N - 1) : '';
+    const wEnd = tN ? addDays(tN, -(nPages - 1 - lp) * N) : '', wStart = tN ? addDays(wEnd, -(N - 1)) : '';
     const win = allPts.filter((p) => dIdx(p.key) === lp);
-    const d0 = win.length ? Date.parse(win[0].key) : 0, span = win.length ? Date.parse(win[win.length - 1].key) - d0 : 0;
-    pts = win.map((p) => ({ ...p, t: span ? (Date.parse(p.key) - d0) / span : null })); // eixo de tempo real, ajustado aos dados da janela
+    pts = win.map((p) => ({ ...p, t: (Date.parse(p.key) - Date.parse(wStart)) / 864e5 / (N - 1) })); // eixo de tempo real da janela
+    if (win.length) ticks = dayTicks(wStart, wEnd);
     linePager = nPages > 1
       ? `<div class="pager"><button type="button" data-lpage="-1" aria-label="Janela anterior"${lp === 0 ? ' disabled' : ''}>‹</button><span>${fmtDate(wStart)} – ${fmtDate(wEnd)}</span><button type="button" data-lpage="1" aria-label="Próxima janela"${lp === nPages - 1 ? ' disabled' : ''}>›</button></div>` : '';
     winUi = `<div class="seg" role="group" aria-label="Intervalo"><button type="button" data-win="week" class="${dash.win === 'week' ? 'on' : ''}">Semanal</button><button type="button" data-win="month" class="${dash.win === 'month' ? 'on' : ''}">Mensal</button></div>`;
   } else if (dash.level === 2 && allPts.length) {
     const start = dash.scope + '-01', span = Number(monthEnd(dash.scope).slice(8)) - 1;
     pts = allPts.map((p) => ({ ...p, t: (Date.parse(p.key) - Date.parse(start)) / 864e5 / Math.max(1, span) }));
+    ticks = dayTicks(start, monthEnd(dash.scope));
   }
   const drill = `<div class="drill" role="group" aria-label="Hierarquia de datas"><button type="button" data-drill="up" title="Subir um nível"${dash.level === 0 ? ' disabled' : ''}>↑</button>` +
     `<button type="button" data-drill="mode" title="Modo de detalhamento: clique em um ponto para detalhá-lo" class="${dash.drillMode ? 'on' : ''}"${dash.level === 2 ? ' disabled' : ''}>↓</button>` +
@@ -756,7 +768,7 @@ function dashInner() {
     `<div class="dash-top"><div class="card"><div class="card-head"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Inspeções e reprovas'} por data</h3>` +
     `<div class="legend">${dash.metric === 'pct' ? '' : `<button type="button" data-ser="insp" class="${dash.hide.insp ? 'off' : ''}"><i style="background:${LINE_COLORS.insp}"></i>Inspeções</button>`}<button type="button" data-ser="rej" class="${dash.hide.rej ? 'off' : ''}"><i style="background:${LINE_COLORS.rej}"></i>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovas'}</button></div>` +
     `${drill}${winUi}</div>` +
-    `${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}${linePager}</div>` +
+    `${pts.length ? lineSvg(pts, ticks) : '<div class="empty">Sem dados para os filtros atuais.</div>'}${linePager}</div>` +
     `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
     `<div class="dash-bars">${DIMS.map(([d, t]) => barsHtml(d, t, facts)).join('')}</div>` +
     `<p class="dash-help">Clique em um item para filtrar os demais gráficos. Ctrl+clique seleciona vários; clique de novo para remover.</p>`;
