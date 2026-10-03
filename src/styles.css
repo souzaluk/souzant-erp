@@ -142,3 +142,10 @@ th.actions,td.actions{width:1%;white-space:nowrap;text-align:right}
 .bar-track{background:#EAFBFD;border-radius:6px;height:14px}
 .bar-fill{background:var(--navy-2);height:100%;border-radius:6px}
 .bar-row b{text-align:right}
+
+/* Inspeções: reprovas no pop-up */
+.modal.wide{width:560px}
+.rep-row{display:grid;grid-template-columns:1fr 100px 28px;gap:8px;margin-bottom:8px}
+.rep-row input{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;color:var(--text)}
+.rep-del{font-size:1.2rem;line-height:1}
+.btn.small{padding:6px 12px;font-size:.85rem}

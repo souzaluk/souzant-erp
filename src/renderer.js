@@ -62,15 +62,23 @@ const entities = {
       { key: 'montadora', label: 'Montadora', type: 'ref', ref: 'montadoras' }
     ]
   },
+  defeitos: {
+    title: 'Defeitos', singular: 'defeito',
+    fields: [
+      { key: 'codigo', label: 'Código', type: 'seq' },
+      { key: 'defeito', label: 'Defeito', type: 'name' }
+    ]
+  },
   inspecoes: {
     title: 'Inspeções/Reprovas', singular: 'inspeção',
     fields: [
-      { key: 'codigo', label: 'Código', type: 'seq' },
+      { key: 'codigo', label: 'Código', type: 'seq', hideCol: true },
       { key: 'data', label: 'Data', type: 'date' },
-      { key: 'peca', label: 'Peça', type: 'ref', ref: 'pecas', alnum: true },
-      { key: 'posto', label: 'Posto de trabalho', type: 'ref', ref: 'postos' },
+      { key: 'peca', label: 'Peça', type: 'ref', ref: 'pecas' },
+      { key: 'posto', label: 'Posto de Trabalho', type: 'ref', ref: 'postos' },
       { key: 'colaborador', label: 'Colaborador', type: 'ref', ref: 'colaboradores' },
-      { key: 'resultado', label: 'Resultado', type: 'result' }
+      { key: 'qtdInspecionada', label: 'Qtde Inspecionada', type: 'int' },
+      { key: 'reprovas', label: 'Qtde Reprovada', type: 'reprovas' }
     ]
   },
   postos: {
@@ -96,13 +104,15 @@ const usedBy = {
   projetos: [['pecas', 'projeto']],
   pecas: [['inspecoes', 'peca']],
   postos: [['inspecoes', 'posto']],
-  colaboradores: [['inspecoes', 'colaborador']]
+  colaboradores: [['inspecoes', 'colaborador']],
+  defeitos: [['inspecoes', 'reprovas.defeito']]
 };
 
 // ---------- Telas ----------
 const screens = {
   '/analise/dashboard/nao-conformidades': { path: 'Análise › Dashboard', title: 'Não Conformidades', dashboard: true },
   '/apontamento/inspecoes-reprovas': { path: 'Apontamento', title: 'Inspeções/Reprovas', entity: 'inspecoes' },
+  '/cadastro/defeitos': { path: 'Cadastro', title: 'Defeitos', entity: 'defeitos' },
   '/cadastro/colaboradores': { path: 'Cadastro', title: 'Colaboradores', entity: 'colaboradores' },
   '/cadastro/montadoras': { path: 'Cadastro', title: 'Montadoras', entity: 'montadoras' },
   '/cadastro/pecas': { path: 'Cadastro', title: 'Peças', entity: 'pecas' },
@@ -172,9 +182,26 @@ function mountProfile() {
   });
 }
 
+const recName = (r) => r.nome ?? r.descricao ?? r.defeito ?? '';
+const recLabel = (r) => `${r.codigo} - ${recName(r)}`;
+const findRec = (entity, code) => db.all(entity).find((x) => String(x.codigo) === String(code));
+
+// Resolve o texto do autocomplete ("1 - Nome", só o código ou só o nome) para um registro
+function resolveRef(entity, text) {
+  const t = String(text).trim().toLowerCase();
+  if (!t) return null;
+  return db.all(entity).find((x) => recLabel(x).toLowerCase() === t || String(x.codigo).toLowerCase() === t || recName(x).toLowerCase() === t) || null;
+}
+
+const datalistHtml = (id, entity) =>
+  `<datalist id="${id}">${db.all(entity).map((x) => `<option value="${esc(recLabel(x))}"></option>`).join('')}</datalist>`;
+
+const rejOf = (r) => Array.isArray(r.reprovas) ? r.reprovas.reduce((a, x) => a + (Number(x.qtd) || 0), 0) : (r.resultado === 'R' ? 1 : 0);
+const inspOf = (r) => Number(r.qtdInspecionada ?? 1);
+
 function refLabel(entity, code) {
-  const r = db.all(entity).find((x) => String(x.codigo) === String(code));
-  return r ? `${esc(code)} - ${esc(r.nome ?? r.descricao)}` : `${esc(code)}`;
+  const r = findRec(entity, code);
+  return r ? esc(recLabel(r)) : esc(code);
 }
 
 function cellHtml(f, row) {
@@ -182,9 +209,27 @@ function cellHtml(f, row) {
   if (f.type === 'status') return v === 'A' ? '<span class="badge on">Ativo</span>' : '<span class="badge off">Inativo</span>';
   if (f.type === 'ref') return refLabel(f.ref, v);
   if (f.type === 'date') return esc(String(v).split('-').reverse().join('/'));
-  if (f.type === 'result') return v === 'R' ? '<span class="badge bad">Reprovado</span>' : '<span class="badge on">Aprovado</span>';
+  if (f.type === 'int') return esc(inspOf(row));
+  if (f.type === 'reprovas') return esc(rejOf(row));
   return esc(v);
 }
+
+// Texto usado na busca da lista (o que o usuário vê na célula)
+function cellText(f, row) {
+  const d = document.createElement('div');
+  d.innerHTML = cellHtml(f, row);
+  return d.textContent;
+}
+
+// Editor de reprovas (defeito + quantidade) dentro do pop-up da inspeção
+function repRowHtml(r = {}) {
+  const d = r.defeito != null && r.defeito !== '' ? findRec('defeitos', r.defeito) : null;
+  return `<div class="rep-row"><input class="rep-def" list="dl-defeitos" placeholder="Defeito" value="${esc(d ? recLabel(d) : '')}" autocomplete="off">` +
+    `<input class="rep-qtd" type="number" min="1" step="1" placeholder="Qtde" value="${esc(r.qtd ?? '')}">` +
+    `<button type="button" class="link danger rep-del" title="Remover">×</button></div>`;
+}
+
+const cols = (e) => e.fields.filter((f) => !f.hideCol);
 
 function entityHtml(key) {
   const e = entities[key];
@@ -192,7 +237,7 @@ function entityHtml(key) {
   return `<div class="breadcrumb">${key === 'inspecoes' ? 'Apontamento' : 'Cadastro'}</div><h1>${e.title}</h1>` +
     `<div class="toolbar"><input type="search" id="search" placeholder="Buscar em ${e.title}..." aria-label="Buscar">` +
     `<button class="btn accent" id="new">Novo</button></div>` +
-    `<div class="card"><table><thead><tr>${e.fields.map((f) => `<th>${f.label}</th>`).join('')}<th class="actions"></th></tr></thead>` +
+    `<div class="card"><table><thead><tr>${cols(e).map((f) => `<th>${f.label}</th>`).join('')}<th class="actions"></th></tr></thead>` +
     `<tbody id="rows"></tbody></table></div>`;
 }
 
@@ -200,14 +245,14 @@ function fillRows(key, term = '') {
   const e = entities[key];
   const t = term.trim().toLowerCase();
   const rows = db.all(key).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
-  const shown = rows.filter((r) => !t || e.fields.some((f) => String(r[f.key]).toLowerCase().includes(t)));
+  const shown = rows.filter((r) => !t || e.fields.some((f) => cellText(f, r).toLowerCase().includes(t)));
   const body = document.getElementById('rows');
   if (!shown.length) {
-    body.innerHTML = `<tr><td class="empty" colspan="${e.fields.length + 1}">Nenhum registro encontrado.</td></tr>`;
+    body.innerHTML = `<tr><td class="empty" colspan="${cols(e).length + 1}">Nenhum registro encontrado.</td></tr>`;
     return;
   }
   body.innerHTML = shown.map((r) =>
-    `<tr>${e.fields.map((f) => `<td>${cellHtml(f, r)}</td>`).join('')}` +
+    `<tr>${cols(e).map((f) => `<td>${cellHtml(f, r)}</td>`).join('')}` +
     `<td class="actions"><button class="link" data-edit="${esc(r.codigo)}">Editar</button>` +
     `<button class="link danger" data-del="${esc(r.codigo)}">Excluir</button></td></tr>`).join('');
 }
@@ -216,11 +261,16 @@ function openForm(key, row) {
   const e = entities[key];
   const editing = !!row;
   const dlg = document.createElement('dialog');
-  dlg.className = 'modal';
+  dlg.className = 'modal' + (key === 'inspecoes' ? ' wide' : '');
   const inputs = e.fields.map((f) => {
     const id = 'f-' + f.key;
     const val = row ? row[f.key] : '';
     let input;
+    if (f.type === 'reprovas') {
+      const reps = row && Array.isArray(row.reprovas) ? row.reprovas : [];
+      return `<div class="field"><span>Reprovas</span><div id="${id}">${reps.map(repRowHtml).join('')}</div>` +
+        `<button type="button" class="btn ghost small" id="rep-add">+ Adicionar reprova</button>${datalistHtml('dl-defeitos', 'defeitos')}</div>`;
+    }
     if (f.type === 'seq') {
       input = `<input id="${id}" value="${editing ? esc(val) : 'Automático'}" disabled>`;
     } else if (f.type === 'code') {
@@ -229,10 +279,11 @@ function openForm(key, row) {
       input = `<select id="${id}"><option value="A"${val !== 'I' ? ' selected' : ''}>Ativo</option><option value="I"${val === 'I' ? ' selected' : ''}>Inativo</option></select>`;
     } else if (f.type === 'date') {
       input = `<input id="${id}" type="date" value="${esc(val || new Date().toLocaleDateString('sv'))}">`;
-    } else if (f.type === 'result') {
-      input = `<select id="${id}"><option value="A"${val !== 'R' ? ' selected' : ''}>Aprovado</option><option value="R"${val === 'R' ? ' selected' : ''}>Reprovado</option></select>`;
+    } else if (f.type === 'int') {
+      input = `<input id="${id}" type="number" min="1" step="1" value="${esc(row ? inspOf(row) : '')}">`;
     } else if (f.type === 'ref') {
-      input = `<input id="${id}" inputmode="numeric" value="${esc(val)}" autocomplete="off"><small class="hint" id="${id}-hint"></small>`;
+      const cur = val !== '' ? findRec(f.ref, val) : null;
+      input = `<input id="${id}" list="dl-${f.key}" value="${esc(cur ? recLabel(cur) : val)}" autocomplete="off" placeholder="Digite para buscar">${datalistHtml('dl-' + f.key, f.ref)}<small class="hint" id="${id}-hint"></small>`;
     } else {
       input = `<input id="${id}" value="${esc(val)}" maxlength="80" autocomplete="off">`;
     }
@@ -258,13 +309,19 @@ function openForm(key, row) {
     } else if (f.type === 'ref') {
       const hint = dlg.querySelector(`#f-${f.key}-hint`);
       const upd = () => {
-        el.value = f.alnum ? el.value.toUpperCase().replace(/[^A-Z0-9._-]/g, '') : el.value.replace(/\D/g, '');
-        const r = el.value && db.all(f.ref).find((x) => String(x.codigo) === el.value);
-        hint.textContent = el.value ? (r ? (r.nome ?? r.descricao) : 'Código não encontrado') : '';
-        hint.classList.toggle('bad', !!el.value && !r);
+        const r = resolveRef(f.ref, el.value);
+        hint.textContent = el.value.trim() && !r ? 'Selecione um registro da lista' : '';
+        hint.classList.toggle('bad', !!hint.textContent);
       };
       el.addEventListener('input', upd);
       upd();
+    } else if (f.type === 'reprovas') {
+      const box = $(f.key);
+      dlg.querySelector('#rep-add').addEventListener('click', () => {
+        box.insertAdjacentHTML('beforeend', repRowHtml());
+        box.lastElementChild.querySelector('input').focus();
+      });
+      box.addEventListener('click', (ev) => { if (ev.target.closest('.rep-del')) ev.target.closest('.rep-row').remove(); });
     }
   }
 
@@ -276,15 +333,35 @@ function openForm(key, row) {
     const data = {};
     for (const f of e.fields) {
       if (f.type === 'seq') continue;
+      if (f.type === 'reprovas') {
+        const list = [];
+        for (const rr of $(f.key).querySelectorAll('.rep-row')) {
+          const d = resolveRef('defeitos', rr.querySelector('.rep-def').value);
+          const q = Number(rr.querySelector('.rep-qtd').value);
+          if (!d) { err.textContent = 'Reprovas: selecione um defeito da lista.'; return; }
+          if (!Number.isInteger(q) || q < 1) { err.textContent = 'Reprovas: informe a quantidade reprovada.'; return; }
+          list.push({ defeito: String(d.codigo), qtd: q });
+        }
+        data.reprovas = list;
+        continue;
+      }
       let v = $(f.key).value;
       if (f.type === 'name') v = cleanName(v, true);
       if (f.type === 'code') v = v.trim().toUpperCase();
-      if (f.type === 'ref') v = v.trim();
-      if (!v) { err.textContent = `Informe ${f.label.toLowerCase()}.`; return; }
-      if (f.type === 'ref' && !db.all(f.ref).some((x) => String(x.codigo) === v)) {
-        err.textContent = `${f.label}: código ${v} não existe.`; return;
+      if (!v.trim()) { err.textContent = `Informe ${f.label.toLowerCase()}.`; return; }
+      if (f.type === 'ref') {
+        const r = resolveRef(f.ref, v);
+        if (!r) { err.textContent = `${f.label}: selecione um registro da lista.`; return; }
+        v = String(r.codigo);
+      }
+      if (f.type === 'int') {
+        v = Number(v);
+        if (!Number.isInteger(v) || v < 1) { err.textContent = `${f.label}: informe um número inteiro maior que zero.`; return; }
       }
       data[f.key] = v;
+    }
+    if (data.reprovas && data.reprovas.reduce((a, x) => a + x.qtd, 0) > data.qtdInspecionada) {
+      err.textContent = 'A quantidade reprovada não pode ser maior que a inspecionada.'; return;
     }
     const rows = db.all(key);
     if (editing) {
@@ -307,7 +384,9 @@ function openForm(key, row) {
 function deleteRow(key, code) {
   const e = entities[key];
   for (const [other, field] of usedBy[key] || []) {
-    if (db.all(other).some((r) => String(r[field]) === String(code))) {
+    const [f1, f2] = field.split('.');
+    const uses = (r) => f2 ? (r[f1] || []).some((x) => String(x[f2]) === String(code)) : String(r[f1]) === String(code);
+    if (db.all(other).some(uses)) {
       alert(`Não é possível excluir: ${e.singular} ${code} está em uso em ${entities[other].title}.`);
       return;
     }
@@ -330,7 +409,7 @@ function mountEntity(key) {
 }
 
 // ---------- Dashboard: Não Conformidades ----------
-// Lê db.all('inspecoes'): { data: 'AAAA-MM-DD', colaborador, peca, posto (códigos), resultado: 'A' | 'R' }
+// Lê db.all('inspecoes'): { data: 'AAAA-MM-DD', colaborador, peca, posto (códigos), qtdInspecionada, reprovas: [{ defeito, qtd }] }
 const fmtPct = (n) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
 
 function gaugeSvg(pct) {
@@ -369,12 +448,11 @@ function barsHtml(title, items) { // items: [[nome, reprovadas]]
 
 function dashboardHtml() {
   const rows = db.all('inspecoes');
-  const rej = rows.filter((r) => r.resultado === 'R');
-  const total = rows.length, rep = rej.length, apr = total - rep;
+  const total = rows.reduce((a, r) => a + inspOf(r), 0), rep = rows.reduce((a, r) => a + rejOf(r), 0), apr = total - rep;
   const name = (list, code, f = 'nome') => (db.all(list).find((x) => String(x.codigo) === String(code)) || {})[f] || `#${code}`;
   const count = (keyFn) => {
     const m = new Map();
-    for (const r of rej) { const k = keyFn(r); if (k != null) m.set(k, (m.get(k) || 0) + 1); }
+    for (const r of rows) { const w = rejOf(r), k = w ? keyFn(r) : null; if (k != null) m.set(k, (m.get(k) || 0) + w); }
     return [...m];
   };
   const peca = (r) => db.all('pecas').find((p) => String(p.codigo) === String(r.peca));
