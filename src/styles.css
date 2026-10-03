@@ -325,3 +325,11 @@ td.actions{text-align:right;white-space:nowrap}
 .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .card-head .seg{margin-left:0}
 .card-head .seg button{padding:5px 12px;font-size:.78rem}
+
+/* Dashboard em tela cheia */
+.dash-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.fs-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px}
+.fs-btn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#dash-wrap:fullscreen{background:var(--bg);overflow:auto;padding:28px 40px}
+#dash-wrap:fullscreen .dash-bars{grid-template-columns:repeat(3,1fr)}
+#dash-wrap:fullscreen .kpi b{font-size:2.6rem}

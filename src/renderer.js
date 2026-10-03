@@ -712,12 +712,25 @@ function dashInner() {
 }
 
 function dashboardHtml() {
-  return `<div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1><div id="dash" class="soft">${dashInner()}</div>`;
+  const expand = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
+  return `<div id="dash-wrap"><div class="dash-head"><div><div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1></div>` +
+    `<button type="button" class="btn ghost fs-btn" id="fs-btn">${expand}<span>${document.fullscreenElement ? 'Sair da tela cheia' : 'Tela cheia'}</span></button></div>` +
+    `<div id="dash" class="soft">${dashInner()}</div></div>`;
 }
 
 let dashTipEl;
+// Em tela cheia só o elemento em fullscreen é exibido: leva o tooltip junto
+document.addEventListener('fullscreenchange', () => {
+  const fs = document.fullscreenElement, b = document.getElementById('fs-btn');
+  if (b) b.querySelector('span').textContent = fs ? 'Sair da tela cheia' : 'Tela cheia';
+  if (dashTipEl) { dashTipEl.hidden = true; (fs || document.body).appendChild(dashTipEl); }
+});
 function mountDashboard() {
   const root = document.getElementById('dash');
+  document.getElementById('fs-btn').addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.getElementById('dash-wrap').requestFullscreen().catch(() => toast('Não foi possível abrir em tela cheia.', 'err'));
+  });
   const update = () => { if (dashTipEl) dashTipEl.hidden = true; root.innerHTML = dashInner(); };
   if (!dashTipEl) { dashTipEl = document.createElement('div'); dashTipEl.className = 'dash-tip'; dashTipEl.hidden = true; document.body.appendChild(dashTipEl); }
   const pick = (el, multi) => {
