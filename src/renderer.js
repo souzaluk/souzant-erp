@@ -178,7 +178,8 @@ function mountProfile() {
     e.preventDefault();
     profileStore.set({ ...profileStore.get(), nome: cleanName(nome.value, true) });
     nome.value = cleanName(nome.value, true);
-    document.getElementById('pf-msg').textContent = 'Perfil salvo.';
+    document.getElementById('pf-msg').textContent = '';
+    toast('Perfil salvo.');
   });
 }
 
@@ -229,32 +230,102 @@ function repRowHtml(r = {}) {
     `<button type="button" class="link danger rep-del" title="Remover">×</button></div>`;
 }
 
+// ---------- Feedback (toast e confirmação) ----------
+function toast(msg, kind = 'ok') {
+  let box = document.getElementById('toasts');
+  if (!box) { box = document.createElement('div'); box.id = 'toasts'; document.body.appendChild(box); }
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind;
+  t.textContent = msg;
+  box.appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 250); }, 2800);
+}
+
+function askDialog(msg, { ok = 'OK', cancel = false, danger = false } = {}) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'modal small';
+    dlg.innerHTML = `<form method="dialog"><p class="ask">${esc(msg)}</p><div class="form-actions">` +
+      (cancel ? '<button type="button" class="btn ghost" data-r="0">Cancelar</button>' : '') +
+      `<button type="button" class="btn${danger ? ' danger' : ''}" data-r="1">${esc(ok)}</button></div></form>`;
+    document.body.appendChild(dlg);
+    dlg.addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) { dlg._r = b.dataset.r === '1'; dlg.close(); } });
+    dlg.addEventListener('close', () => { dlg.remove(); resolve(!!dlg._r); });
+    dlg.showModal();
+  });
+}
+
+// ---------- Listas ----------
 const cols = (e) => e.fields.filter((f) => !f.hideCol);
+const hasStatus = (e) => e.fields.some((f) => f.type === 'status');
+const entState = {};
+const listState = (key) => entState[key] ||= { sort: key === 'inspecoes' ? 'data' : 'codigo', dir: key === 'inspecoes' ? -1 : 1, status: 'all', open: new Set() };
+const ICO = {
+  edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></svg>',
+  del: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13M10 11v6M14 11v6"/></svg>',
+  search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg>'
+};
 
 function entityHtml(key) {
-  const e = entities[key];
-  const rows = db.all(key);
+  const e = entities[key], s = listState(key);
+  const seg = hasStatus(e)
+    ? `<div class="seg" role="group" aria-label="Situação">${[['all', 'Todos'], ['A', 'Ativos'], ['I', 'Inativos']].map(([v, t]) => `<button type="button" data-status="${v}" class="${s.status === v ? 'on' : ''}">${t}</button>`).join('')}</div>` : '';
   return `<div class="breadcrumb">${key === 'inspecoes' ? 'Apontamento' : 'Cadastro'}</div><h1>${e.title}</h1>` +
-    `<div class="toolbar"><input type="search" id="search" placeholder="Buscar em ${e.title}..." aria-label="Buscar">` +
-    `<button class="btn accent" id="new">Novo</button></div>` +
-    `<div class="card"><table><thead><tr>${cols(e).map((f) => `<th>${f.label}</th>`).join('')}<th class="actions"></th></tr></thead>` +
+    `<div class="toolbar"><label class="search">${ICO.search}<input type="search" id="search" placeholder="Buscar em ${e.title}..." aria-label="Buscar"></label>` +
+    `${seg}<span class="count" id="count"></span><button class="btn accent" id="new">+ Novo</button></div>` +
+    `<div class="card table-card"><table><thead><tr>${cols(e).map((f) => `<th data-sort="${f.key}" tabindex="0">${f.label}<i class="arrow"></i></th>`).join('')}<th class="actions"></th></tr></thead>` +
     `<tbody id="rows"></tbody></table></div>`;
 }
 
+function sortVal(f, r) {
+  if (f.type === 'seq') return Number(r.codigo) || 0;
+  if (f.type === 'int') return inspOf(r);
+  if (f.type === 'reprovas') return rejOf(r);
+  if (f.type === 'date') return String(r[f.key]);
+  return cellText(f, r).toLowerCase();
+}
+
+function refresh(key) { fillRows(key, document.getElementById('search')?.value || ''); }
+
 function fillRows(key, term = '') {
-  const e = entities[key];
+  const e = entities[key], s = listState(key);
   const t = term.trim().toLowerCase();
-  const rows = db.all(key).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
-  const shown = rows.filter((r) => !t || e.fields.some((f) => cellText(f, r).toLowerCase().includes(t)));
+  const all = db.all(key);
+  const sf = e.fields.find((f) => f.key === s.sort) || e.fields[0];
+  const shown = all
+    .filter((r) => s.status === 'all' || r.situacao === s.status)
+    .filter((r) => !t || e.fields.some((f) => cellText(f, r).toLowerCase().includes(t)))
+    .sort((a, b) => {
+      const va = sortVal(sf, a), vb = sortVal(sf, b);
+      return s.dir * (typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true }));
+    });
+  document.querySelectorAll('th[data-sort]').forEach((th) => {
+    th.classList.toggle('sorted', th.dataset.sort === s.sort);
+    th.dataset.dir = th.dataset.sort === s.sort ? (s.dir > 0 ? 'asc' : 'desc') : '';
+  });
+  document.getElementById('count').textContent = shown.length === all.length ? `${all.length} registro${all.length === 1 ? '' : 's'}` : `${shown.length} de ${all.length} registros`;
   const body = document.getElementById('rows');
+  const span = cols(e).length + 1;
   if (!shown.length) {
-    body.innerHTML = `<tr><td class="empty" colspan="${cols(e).length + 1}">Nenhum registro encontrado.</td></tr>`;
+    body.innerHTML = `<tr><td class="empty" colspan="${span}"><div class="empty-ico">${ICO.search}</div>${all.length ? 'Nenhum registro encontrado para os filtros.' : 'Nenhum registro ainda. Clique em “+ Novo” para começar.'}</td></tr>`;
     return;
   }
-  body.innerHTML = shown.map((r) =>
-    `<tr>${cols(e).map((f) => `<td>${cellHtml(f, r)}</td>`).join('')}` +
-    `<td class="actions"><button class="link" data-edit="${esc(r.codigo)}">Editar</button>` +
-    `<button class="link danger" data-del="${esc(r.codigo)}">Excluir</button></td></tr>`).join('');
+  const expandable = key === 'inspecoes';
+  body.innerHTML = shown.map((r) => {
+    const open = expandable && s.open.has(String(r.codigo));
+    let detail = '';
+    if (open) {
+      const reps = Array.isArray(r.reprovas) ? r.reprovas : [];
+      const ins = inspOf(r), rj = rejOf(r);
+      detail = `<tr class="detail"><td colspan="${span}"><div class="detail-box">` +
+        (reps.length ? reps.map((x) => `<span class="chip">${esc(recName(findRec('defeitos', x.defeito) || { nome: '#' + x.defeito }))} × ${esc(x.qtd)}</span>`).join('') : '<span class="muted">Sem reprovas nesta inspeção.</span>') +
+        `<span class="detail-pct">Reprovação: <b>${fmtPct(ins ? (rj / ins) * 100 : 0)}</b></span></div></td></tr>`;
+    }
+    return `<tr${expandable ? ` class="exp${open ? ' open' : ''}" data-open="${esc(r.codigo)}"` : ''}>` +
+      cols(e).map((f, i) => `<td>${expandable && i === 0 ? '<i class="chev"></i>' : ''}${cellHtml(f, r)}</td>`).join('') +
+      `<td class="actions"><button class="icon-btn" data-edit="${esc(r.codigo)}" title="Editar" aria-label="Editar">${ICO.edit}</button>` +
+      `<button class="icon-btn danger" data-del="${esc(r.codigo)}" title="Excluir" aria-label="Excluir">${ICO.del}</button></td></tr>` + detail;
+  }).join('');
 }
 
 function openForm(key, row) {
@@ -374,38 +445,85 @@ function openForm(key, row) {
     }
     db.save(key, rows);
     dlg.close();
-    fillRows(key, document.getElementById('search')?.value || '');
+    refresh(key);
+    toast(editing ? 'Registro atualizado.' : 'Registro criado.');
   });
   dlg.showModal();
   const first = dlg.querySelector('input:not([disabled]), select');
   if (first) first.focus();
 }
 
-function deleteRow(key, code) {
+async function deleteRow(key, code) {
   const e = entities[key];
   for (const [other, field] of usedBy[key] || []) {
     const [f1, f2] = field.split('.');
     const uses = (r) => f2 ? (r[f1] || []).some((x) => String(x[f2]) === String(code)) : String(r[f1]) === String(code);
     if (db.all(other).some(uses)) {
-      alert(`Não é possível excluir: ${e.singular} ${code} está em uso em ${entities[other].title}.`);
+      await askDialog(`Não é possível excluir: ${e.singular} ${code} está em uso em ${entities[other].title}.`);
       return;
     }
   }
-  if (!confirm(`Excluir ${e.singular} ${code}?`)) return;
+  if (!await askDialog(`Excluir ${e.singular} ${code}?`, { ok: 'Excluir', cancel: true, danger: true })) return;
   db.save(key, db.all(key).filter((r) => String(r.codigo) !== String(code)));
-  fillRows(key, document.getElementById('search')?.value || '');
+  refresh(key);
+  toast('Registro excluído.');
 }
 
 function mountEntity(key) {
+  const s = listState(key);
   fillRows(key);
   document.getElementById('search').addEventListener('input', (ev) => fillRows(key, ev.target.value));
   document.getElementById('new').addEventListener('click', () => openForm(key));
+  const sortBy = (th) => {
+    if (s.sort === th.dataset.sort) s.dir = -s.dir; else { s.sort = th.dataset.sort; s.dir = 1; }
+    refresh(key);
+  };
+  const head = document.querySelector('thead');
+  head.addEventListener('click', (ev) => { const th = ev.target.closest('th[data-sort]'); if (th) sortBy(th); });
+  head.addEventListener('keydown', (ev) => { const th = ev.target.closest('th[data-sort]'); if (th && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); sortBy(th); } });
+  document.querySelector('.toolbar').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-status]');
+    if (!b) return;
+    s.status = b.dataset.status;
+    document.querySelectorAll('[data-status]').forEach((x) => x.classList.toggle('on', x === b));
+    refresh(key);
+  });
   document.getElementById('rows').addEventListener('click', (ev) => {
     const b = ev.target.closest('button');
-    if (!b) return;
-    if (b.dataset.edit) openForm(key, db.all(key).find((r) => String(r.codigo) === b.dataset.edit));
-    if (b.dataset.del) deleteRow(key, b.dataset.del);
+    if (b) {
+      if (b.dataset.edit) openForm(key, db.all(key).find((r) => String(r.codigo) === b.dataset.edit));
+      if (b.dataset.del) deleteRow(key, b.dataset.del);
+      return;
+    }
+    const tr = ev.target.closest('tr[data-open]');
+    if (tr) { const c = tr.dataset.open; s.open.has(c) ? s.open.delete(c) : s.open.add(c); refresh(key); }
   });
+}
+
+// ---------- Início ----------
+function homeHtml() {
+  const insp = db.all('inspecoes');
+  const total = insp.reduce((a, r) => a + inspOf(r), 0), rej = insp.reduce((a, r) => a + rejOf(r), 0);
+  const nome = (profileStore.get().nome || '').split(' ')[0];
+  const kpi = (label, v, cls, sub) => `<div class="card kpi ${cls}"><div><span>${label}</span><b>${v}</b><small>${sub}</small></div></div>`;
+  const quick = [
+    ['Dashboard', 'Não Conformidades', '/analise/dashboard/nao-conformidades', 'Ver análise'],
+    ['Apontamento', 'Inspeções/Reprovas', '/apontamento/inspecoes-reprovas', `${insp.length} registros`],
+    ...[['colaboradores', '/cadastro/colaboradores'], ['defeitos', '/cadastro/defeitos'], ['montadoras', '/cadastro/montadoras'], ['pecas', '/cadastro/pecas'], ['postos', '/cadastro/postos-de-trabalho'], ['projetos', '/cadastro/projetos']]
+      .map(([k, route]) => ['Cadastro', entities[k].title, route, `${db.all(k).length} registros`])
+  ];
+  const recent = [...insp].sort((a, b) => String(b.data).localeCompare(String(a.data)) || b.codigo - a.codigo).slice(0, 5);
+  const pecaTxt = (c) => { const p = findRec('pecas', c); return p ? `${p.codigo} - ${p.descricao}` : c; };
+  return `<div class="breadcrumb">Início</div><h1>${nome ? `Olá, ${esc(nome)}!` : 'Bem-vindo ao Souzant ERP'}</h1>` +
+    `<div class="soft"><div class="kpis">${kpi('Inspecionados', total, '', 'total registrado')}${kpi('Reprovados', rej, 'bad', 'total registrado')}${kpi('Índice de reprovação', total ? fmtPct((rej / total) * 100) : '—', 'ok', 'geral')}</div>` +
+    `<h3 class="sec">Acesso rápido</h3><div class="quick">${quick.map(([g, t, route, sub]) => `<button type="button" class="card quick-card" data-go="${route}"><small>${g}</small><b>${t}</b><span>${sub}</span></button>`).join('')}</div>` +
+    `<div class="card table-card"><h3 class="card-title">Últimas inspeções</h3>` +
+    (recent.length ? `<table><thead><tr><th>Data</th><th>Peça</th><th>Qtde Inspecionada</th><th>Qtde Reprovada</th></tr></thead><tbody>${recent.map((r) => `<tr><td>${fmtDate(r.data)}</td><td>${esc(pecaTxt(r.peca))}</td><td>${inspOf(r)}</td><td>${rejOf(r)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Nenhuma inspeção registrada.</div>') +
+    `</div></div>`;
+}
+
+function mountHome() {
+  view.querySelector('.quick').addEventListener('click', (ev) => { const b = ev.target.closest('[data-go]'); if (b) openTab(b.dataset.go); });
 }
 
 // ---------- Dashboard: Não Conformidades ----------
@@ -551,7 +669,7 @@ function dashInner() {
 }
 
 function dashboardHtml() {
-  return `<div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1><div id="dash">${dashInner()}</div>`;
+  return `<div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1><div id="dash" class="soft">${dashInner()}</div>`;
 }
 
 let dashTipEl;
@@ -643,7 +761,7 @@ function render() {
   }
   markCurrent();
   const s = screens[active];
-  if (!s) view.innerHTML = '<h1>Bem-vindo ao Souzant ERP</h1>';
+  if (!s) { view.innerHTML = homeHtml(); mountHome(); }
   else if (s.entity) { view.innerHTML = entityHtml(s.entity); mountEntity(s.entity); }
   else if (s.profile) { view.innerHTML = profileHtml(); mountProfile(); }
   else { view.innerHTML = placeholderHtml(s); if (s.dashboard) mountDashboard(); }
