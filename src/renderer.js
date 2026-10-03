@@ -410,7 +410,47 @@ function mountEntity(key) {
 
 // ---------- Dashboard: Não Conformidades ----------
 // Lê db.all('inspecoes'): { data: 'AAAA-MM-DD', colaborador, peca, posto (códigos), qtdInspecionada, reprovas: [{ defeito, qtd }] }
+// Interativo (estilo Power BI): clique num item filtra os demais visuais; Ctrl+clique seleciona vários.
 const fmtPct = (n) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+const fmtDate = (iso) => String(iso).split('-').reverse().join('/');
+
+const DIMS = [['colaborador', 'Colaboradores'], ['montadora', 'Montadoras'], ['peca', 'Peças'], ['posto', 'Postos de trabalho'], ['projeto', 'Projetos']];
+const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set() }, from: '', to: '', metric: 'qtd' };
+const dashActive = () => !!(dash.from || dash.to || Object.values(dash.f).some((s) => s.size));
+
+function dashFacts() {
+  const nm = (entity, code) => { const x = findRec(entity, code); return x ? recName(x) : `#${code}`; };
+  return db.all('inspecoes').map((r) => {
+    const p = findRec('pecas', r.peca);
+    return {
+      data: r.data, insp: inspOf(r), rej: rejOf(r),
+      colaborador: nm('colaboradores', r.colaborador),
+      posto: nm('postos', r.posto),
+      peca: p ? `${p.codigo} - ${p.descricao}` : `#${r.peca}`,
+      montadora: p ? nm('montadoras', p.montadora) : '(sem peça)',
+      projeto: p ? nm('projetos', p.projeto) : '(sem peça)'
+    };
+  });
+}
+
+// Linhas visíveis aplicando o período e os filtros de todas as dimensões, menos `except` (o próprio visual continua completo e só destaca a seleção)
+const dashRows = (facts, except) => facts.filter((f) =>
+  (!dash.from || f.data >= dash.from) && (!dash.to || f.data <= dash.to) &&
+  Object.entries(dash.f).every(([d, set]) => d === except || !set.size || set.has(f[d])));
+
+function dashAgg(rows, dim) {
+  const m = new Map();
+  for (const f of rows) {
+    const a = m.get(f[dim]) || { insp: 0, rej: 0 };
+    a.insp += f.insp; a.rej += f.rej;
+    m.set(f[dim], a);
+  }
+  return m;
+}
+
+const dashVal = (a) => dash.metric === 'pct' ? (a.insp ? (a.rej / a.insp) * 100 : 0) : a.rej;
+const dashFmt = (v) => dash.metric === 'pct' ? fmtPct(v) : String(v);
+const dashTip = (label, a) => `${label}\nReprovadas: ${a.rej}\nInspecionadas: ${a.insp}\nReprovação: ${fmtPct(a.insp ? (a.rej / a.insp) * 100 : 0)}`;
 
 function gaugeSvg(pct) {
   const a = Math.PI * (1 - pct / 100), cx = 110, cy = 100, r = 80;
@@ -424,52 +464,119 @@ function gaugeSvg(pct) {
     `<text x="${cx + r}" y="118" text-anchor="middle" font-size="10" fill="#5B7089">100%</text></svg>`;
 }
 
-function lineSvg(points) { // points: [[label, value]]
-  const W = 640, H = 220, L = 36, B = 28, T = 12, R = 12;
-  const max = Math.max(1, ...points.map((p) => p[1]));
+function lineSvg(points) { // points: [{ key, label, a }]
+  const W = 640, H = 220, L = 40, B = 28, T = 12, R = 12;
+  const vals = points.map((p) => dashVal(p.a));
+  const max = Math.max(1, ...vals);
   const step = points.length > 1 ? (W - L - R) / (points.length - 1) : 0;
   const px = (i) => points.length > 1 ? L + i * step : (W + L - R) / 2;
   const py = (v) => T + (H - T - B) * (1 - v / max);
   const every = Math.ceil(points.length / 8);
+  const sel = dash.f.data, any = sel.size > 0;
   return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Reprovações por data">` +
-    [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(max * f)}" y2="${py(max * f)}" stroke="#E1E8F0"/><text x="${L - 6}" y="${py(max * f) + 4}" text-anchor="end" font-size="10" fill="#5B7089">${Math.round(max * f)}</text>`).join('') +
-    `<polyline fill="none" stroke="#083F78" stroke-width="2.5" points="${points.map((p, i) => `${px(i)},${py(p[1])}`).join(' ')}"/>` +
-    points.map((p, i) => `<circle cx="${px(i)}" cy="${py(p[1])}" r="4" fill="#03D9EE" stroke="#083F78" stroke-width="2"><title>${esc(p[0])}: ${p[1]}</title></circle>` +
-      (i % every === 0 ? `<text x="${px(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#5B7089">${esc(p[0])}</text>` : '')).join('') + '</svg>';
+    [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(max * f)}" y2="${py(max * f)}" stroke="#E1E8F0"/><text x="${L - 6}" y="${py(max * f) + 4}" text-anchor="end" font-size="10" fill="#5B7089">${dash.metric === 'pct' ? Math.round(max * f) + '%' : Math.round(max * f)}</text>`).join('') +
+    `<polyline fill="none" stroke="#083F78" stroke-width="2.5" points="${points.map((p, i) => `${px(i)},${py(vals[i])}`).join(' ')}"/>` +
+    points.map((p, i) => {
+      const on = sel.has(p.key);
+      return `<g data-dim="data" data-key="${esc(p.key)}" data-tip="${esc(dashTip(p.label, p.a))}" class="pt${on ? ' sel' : ''}${any && !on ? ' dim' : ''}" tabindex="0" role="button">` +
+        `<circle cx="${px(i)}" cy="${py(vals[i])}" r="14" fill="transparent"/>` +
+        `<circle cx="${px(i)}" cy="${py(vals[i])}" r="${on ? 6 : 4}" fill="${on ? '#083F78' : '#03D9EE'}" stroke="#083F78" stroke-width="2"/></g>` +
+        (i % every === 0 ? `<text x="${px(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#5B7089">${esc(p.label)}</text>` : '');
+    }).join('') + '</svg>';
 }
 
-function barsHtml(title, items) { // items: [[nome, reprovadas]]
-  const top = items.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8);
-  const max = Math.max(1, ...top.map((i) => i[1]));
-  return `<div class="card"><h3>${title}</h3>` + (top.length
-    ? top.map(([n, v]) => `<div class="bar-row"><span class="bar-name" title="${esc(n)}">${esc(n)}</span><div class="bar-track"><div class="bar-fill" style="width:${(v / max) * 100}%"></div></div><b>${v}</b></div>`).join('')
-    : '<div class="empty">Sem reprovações.</div>') + '</div>';
+function barsHtml(dim, title, facts) {
+  const m = dashAgg(dashRows(facts, dim), dim), sel = dash.f[dim];
+  const all = [...m].filter(([k, a]) => dash.metric === 'pct' ? a.insp > 0 : a.rej > 0 || sel.has(k))
+    .sort((x, y) => dashVal(y[1]) - dashVal(x[1]) || x[0].localeCompare(y[0]));
+  const items = all.filter(([k], i) => i < 8 || sel.has(k));
+  const max = Math.max(1, ...items.map(([, a]) => dashVal(a)));
+  return `<div class="card"><h3>${title}</h3>` + (items.length
+    ? items.map(([k, a]) => {
+      const on = sel.has(k);
+      return `<div class="bar-row${on ? ' sel' : ''}${sel.size && !on ? ' dim' : ''}" data-dim="${dim}" data-key="${esc(k)}" data-tip="${esc(dashTip(k, a))}" tabindex="0" role="button">` +
+        `<span class="bar-name">${esc(k)}</span><div class="bar-track"><div class="bar-fill" style="width:${(dashVal(a) / max) * 100}%"></div></div><b>${dashFmt(dashVal(a))}</b></div>`;
+    }).join('')
+    : '<div class="empty">Sem dados para os filtros atuais.</div>') + '</div>';
+}
+
+function dashInner() {
+  const facts = dashFacts();
+  if (!facts.length) return '<div class="card empty">Nenhuma inspeção registrada para exibir.</div>';
+  const dates = facts.map((f) => f.data).sort();
+  const rows = dashRows(facts, null);
+  const total = rows.reduce((a, f) => a + f.insp, 0), rep = rows.reduce((a, f) => a + f.rej, 0), apr = total - rep;
+  const share = (v) => total ? fmtPct((v / total) * 100) : '—';
+  const kpi = (label, v, cls, sub) => `<div class="card kpi ${cls}"><span>${label}</span><b>${v}</b><small>${sub}</small></div>`;
+  const pts = [...dashAgg(dashRows(facts, 'data'), 'data')].sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([k, a]) => ({ key: k, label: fmtDate(k).slice(0, 5), a }));
+  const chips = [...(dash.from || dash.to ? [['range', `Período: ${dash.from ? fmtDate(dash.from) : '…'} a ${dash.to ? fmtDate(dash.to) : '…'}`]] : []),
+    ...[['data', 'Data'], ...DIMS.map(([d, t]) => [d, t])].filter(([d]) => dash.f[d].size)
+      .map(([d, t]) => [d, `${t}: ${[...dash.f[d]].map((v) => (d === 'data' ? fmtDate(v) : v)).join(', ')}`])];
+  return `<div class="dash-bar">` +
+    `<label>De <input type="date" id="d-from" value="${esc(dash.from)}" min="${dates[0]}" max="${dates[dates.length - 1]}"></label>` +
+    `<label>até <input type="date" id="d-to" value="${esc(dash.to)}" min="${dates[0]}" max="${dates[dates.length - 1]}"></label>` +
+    `<div class="seg" role="group" aria-label="Métrica"><button type="button" data-metric="qtd" class="${dash.metric === 'qtd' ? 'on' : ''}">Qtde reprovada</button>` +
+    `<button type="button" data-metric="pct" class="${dash.metric === 'pct' ? 'on' : ''}">% de reprovação</button></div>` +
+    (dashActive() ? '<button type="button" class="btn ghost small" data-clear="all">Limpar filtros</button>' : '') +
+    `</div>` +
+    (chips.length ? `<div class="chips">${chips.map(([d, t]) => `<span class="chip">${esc(t)}<button type="button" data-clear="${d}" aria-label="Remover filtro">×</button></span>`).join('')}</div>` : '') +
+    `<div class="kpis">${kpi('Inspecionados', total, '', 'no filtro atual')}${kpi('Aprovados', apr, 'ok', share(apr) + ' do total')}${kpi('Reprovados', rep, 'bad', share(rep) + ' do total')}</div>` +
+    `<div class="dash-top"><div class="card"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovações'} por data</h3>${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}</div>` +
+    `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
+    `<div class="dash-bars">${DIMS.map(([d, t]) => barsHtml(d, t, facts)).join('')}</div>` +
+    `<p class="dash-help">Clique em um item para filtrar os demais gráficos. Ctrl+clique seleciona vários; clique de novo para remover.</p>`;
 }
 
 function dashboardHtml() {
-  const rows = db.all('inspecoes');
-  const total = rows.reduce((a, r) => a + inspOf(r), 0), rep = rows.reduce((a, r) => a + rejOf(r), 0), apr = total - rep;
-  const name = (list, code, f = 'nome') => (db.all(list).find((x) => String(x.codigo) === String(code)) || {})[f] || `#${code}`;
-  const count = (keyFn) => {
-    const m = new Map();
-    for (const r of rows) { const w = rejOf(r), k = w ? keyFn(r) : null; if (k != null) m.set(k, (m.get(k) || 0) + w); }
-    return [...m];
+  return `<div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1><div id="dash">${dashInner()}</div>`;
+}
+
+let dashTipEl;
+function mountDashboard() {
+  const root = document.getElementById('dash');
+  const update = () => { if (dashTipEl) dashTipEl.hidden = true; root.innerHTML = dashInner(); };
+  if (!dashTipEl) { dashTipEl = document.createElement('div'); dashTipEl.className = 'dash-tip'; dashTipEl.hidden = true; document.body.appendChild(dashTipEl); }
+  const pick = (el, multi) => {
+    const set = dash.f[el.dataset.dim], k = el.dataset.key;
+    if (multi) set.has(k) ? set.delete(k) : set.add(k);
+    else if (set.size === 1 && set.has(k)) set.clear();
+    else { set.clear(); set.add(k); }
+    update();
   };
-  const peca = (r) => db.all('pecas').find((p) => String(p.codigo) === String(r.peca));
-  const byDate = count((r) => r.data).sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([d, v]) => [d.split('-').reverse().slice(0, 2).join('/'), v]);
-  const kpi = (label, v, cls = '') => `<div class="card kpi ${cls}"><span>${label}</span><b>${v}</b></div>`;
-  return `<div class="breadcrumb">Análise › Dashboard</div><h1>Não Conformidades</h1>` +
-    `<div class="kpis">${kpi('Inspecionados', total)}${kpi('Aprovados', apr, 'ok')}${kpi('Reprovados', rep, 'bad')}</div>` +
-    `<div class="dash-top"><div class="card"><h3>Reprovações por data</h3>${byDate.length ? lineSvg(byDate) : '<div class="empty">Sem reprovações.</div>'}</div>` +
-    `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
-    `<div class="dash-bars">` +
-    barsHtml('Colaboradores', count((r) => name('colaboradores', r.colaborador))) +
-    barsHtml('Montadoras', count((r) => { const p = peca(r); return p ? name('montadoras', p.montadora) : null; })) +
-    barsHtml('Peças', count((r) => { const p = peca(r); return p ? `${p.codigo} - ${p.descricao}` : `#${r.peca}`; })) +
-    barsHtml('Postos de trabalho', count((r) => name('postos', r.posto, 'descricao'))) +
-    barsHtml('Projetos', count((r) => { const p = peca(r); return p ? name('projetos', p.projeto) : null; })) +
-    `</div>`;
+  root.addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-dim],[data-metric],[data-clear]');
+    if (!t) return;
+    if (t.dataset.metric) { dash.metric = t.dataset.metric; update(); }
+    else if (t.dataset.clear) {
+      const c = t.dataset.clear;
+      if (c === 'all') { dash.from = dash.to = ''; Object.values(dash.f).forEach((s) => s.clear()); }
+      else if (c === 'range') dash.from = dash.to = '';
+      else dash.f[c].clear();
+      update();
+    } else pick(t, ev.ctrlKey || ev.metaKey);
+  });
+  root.addEventListener('keydown', (ev) => {
+    const t = ev.target.closest('[data-dim]');
+    if (t && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); pick(t, ev.ctrlKey || ev.metaKey); }
+  });
+  root.addEventListener('change', (ev) => {
+    if (ev.target.id === 'd-from') dash.from = ev.target.value;
+    else if (ev.target.id === 'd-to') dash.to = ev.target.value;
+    else return;
+    if (dash.from && dash.to && dash.from > dash.to) [dash.from, dash.to] = [dash.to, dash.from];
+    update();
+  });
+  root.addEventListener('mousemove', (ev) => {
+    const t = ev.target.closest('[data-tip]');
+    if (!t) { dashTipEl.hidden = true; return; }
+    dashTipEl.textContent = t.dataset.tip;
+    dashTipEl.hidden = false;
+    const w = dashTipEl.offsetWidth;
+    dashTipEl.style.left = Math.min(ev.clientX + 14, window.innerWidth - w - 8) + 'px';
+    dashTipEl.style.top = (ev.clientY + 14) + 'px';
+  });
+  root.addEventListener('mouseleave', () => { dashTipEl.hidden = true; });
 }
 
 function placeholderHtml(s) {
@@ -517,7 +624,7 @@ function render() {
   if (!s) view.innerHTML = '<h1>Bem-vindo ao Souzant ERP</h1>';
   else if (s.entity) { view.innerHTML = entityHtml(s.entity); mountEntity(s.entity); }
   else if (s.profile) { view.innerHTML = profileHtml(); mountProfile(); }
-  else view.innerHTML = placeholderHtml(s);
+  else { view.innerHTML = placeholderHtml(s); if (s.dashboard) mountDashboard(); }
 }
 
 // Destaca o item do menu da tela ativa e, na barra lateral, abre os grupos que o contêm
