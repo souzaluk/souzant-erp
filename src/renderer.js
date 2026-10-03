@@ -533,7 +533,8 @@ const fmtPct = (n) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maxi
 const fmtDate = (iso) => String(iso).split('-').reverse().join('/');
 
 const DIMS = [['colaborador', 'Colaboradores'], ['montadora', 'Montadoras'], ['peca', 'Peças'], ['posto', 'Postos de trabalho'], ['projeto', 'Projetos']];
-const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set() }, from: '', to: '', metric: 'qtd' };
+const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set() }, from: '', to: '', metric: 'qtd', page: {} };
+const BAR_PAGE = 3;
 const dashActive = () => !!(dash.from || dash.to || Object.values(dash.f).some((s) => s.size));
 
 function dashFacts() {
@@ -628,15 +629,20 @@ function barsHtml(dim, title, facts) {
   const m = dashAgg(dashRows(facts, dim), dim), sel = dash.f[dim];
   const all = [...m].filter(([k, a]) => dash.metric === 'pct' ? a.insp > 0 : a.rej > 0 || sel.has(k))
     .sort((x, y) => dashVal(y[1]) - dashVal(x[1]) || x[0].localeCompare(y[0]));
-  const items = all.filter(([k], i) => i < 8 || sel.has(k));
-  const max = Math.max(1, ...items.map(([, a]) => dashVal(a)));
-  return `<div class="card"><h3>${title}</h3>` + (items.length
+  const pages = Math.max(1, Math.ceil(all.length / BAR_PAGE));
+  const page = Math.min(dash.page[dim] || 0, pages - 1);
+  dash.page[dim] = page;
+  const items = all.slice(page * BAR_PAGE, (page + 1) * BAR_PAGE);
+  const max = Math.max(1, ...all.map(([, a]) => dashVal(a)));
+  const pager = pages > 1
+    ? `<div class="pager"><button type="button" data-page="${dim}" data-d="-1" aria-label="Página anterior"${page === 0 ? ' disabled' : ''}>‹</button><span>${page + 1} / ${pages}</span><button type="button" data-page="${dim}" data-d="1" aria-label="Próxima página"${page === pages - 1 ? ' disabled' : ''}>›</button></div>` : '';
+  return `<div class="card"><h3>${title}</h3><div class="bar-list">` + (items.length
     ? items.map(([k, a]) => {
       const on = sel.has(k);
       return `<div class="bar-row${on ? ' sel' : ''}${sel.size && !on ? ' dim' : ''}" data-dim="${dim}" data-key="${esc(k)}" data-tip="${esc(dashTip(k, a))}" tabindex="0" role="button">` +
         `<span class="bar-name">${esc(k)}</span><div class="bar-track"><div class="bar-fill" style="width:${(dashVal(a) / max) * 100}%"></div></div><b>${dashFmt(dashVal(a))}</b></div>`;
     }).join('')
-    : '<div class="empty">Sem dados para os filtros atuais.</div>') + '</div>';
+    : '<div class="empty">Sem dados para os filtros atuais.</div>') + '</div>' + pager + '</div>';
 }
 
 function dashInner() {
@@ -685,8 +691,9 @@ function mountDashboard() {
     update();
   };
   root.addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-dim],[data-metric],[data-clear]');
+    const t = ev.target.closest('[data-dim],[data-metric],[data-clear],[data-page]');
     if (!t) return;
+    if (t.dataset.page) { dash.page[t.dataset.page] = (dash.page[t.dataset.page] || 0) + Number(t.dataset.d); update(); return; }
     if (t.dataset.metric) { dash.metric = t.dataset.metric; update(); }
     else if (t.dataset.clear) {
       const c = t.dataset.clear;

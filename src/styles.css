@@ -311,3 +311,10 @@ td.actions{text-align:right;white-space:nowrap}
 /* Perfil */
 .profile-card{padding:28px;border-radius:22px}
 .profile-photo{box-shadow:0 6px 20px rgba(3,217,238,.25)}
+
+/* Paginação dos gráficos de barras */
+.bar-list{min-height:108px}
+.pager{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:10px;color:var(--muted);font-size:.8rem;font-weight:600}
+.pager button{width:28px;height:28px;border:0;border-radius:9px;background:#E9EFF6;color:var(--navy);font-size:1.1rem;line-height:1;cursor:pointer;transition:background .12s}
+.pager button:hover:not(:disabled){background:#D5E2F0}
+.pager button:disabled{opacity:.35;cursor:default}
