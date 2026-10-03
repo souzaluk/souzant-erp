@@ -370,3 +370,17 @@ td.actions{text-align:right;white-space:nowrap}
 .legend i{width:14px;height:4px;border-radius:2px;display:inline-block}
 .pt .col{transition:fill .12s}
 .pt:hover .col{fill:rgba(3,217,238,.08)}
+
+/* Gráfico de datas estilo Power BI: hierarquia, legenda clicável, linha de cruzamento */
+.drill{display:flex;align-items:center;gap:4px}
+.drill button{width:28px;height:28px;border:0;border-radius:8px;background:#E9EFF6;color:var(--navy);font-size:.95rem;line-height:1;cursor:pointer;transition:background .12s}
+.drill button:hover:not(:disabled){background:#D5E2F0}
+.drill button.on{background:var(--navy-2);color:#fff}
+.drill button:disabled{opacity:.35;cursor:default}
+.drill-path{margin-left:6px;color:var(--muted);font-size:.78rem;font-weight:600;white-space:nowrap}
+.legend button{border:0;background:none;font:inherit;color:inherit;display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:2px 4px;border-radius:6px}
+.legend button:hover{background:#EEF3F8}
+.legend button.off{opacity:.4;text-decoration:line-through}
+.pt .xh{opacity:0;pointer-events:none}
+.pt:hover .xh,.pt:focus-visible .xh{opacity:1}
+.card-head{flex-wrap:wrap}

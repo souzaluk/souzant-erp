@@ -533,8 +533,13 @@ const fmtPct = (n) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maxi
 const fmtDate = (iso) => String(iso).split('-').reverse().join('/');
 
 const DIMS = [['colaborador', 'Colaboradores'], ['montadora', 'Montadoras'], ['peca', 'Peças'], ['posto', 'Postos de trabalho'], ['projeto', 'Projetos'], ['defeito', 'Defeitos']];
-const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set(), defeito: new Set() }, from: '', to: '', metric: 'qtd', page: {}, win: 'week', linePage: null, lpCur: 0 };
+const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set(), defeito: new Set() }, from: '', to: '', metric: 'qtd', page: {}, win: 'week', linePage: null, lpCur: 0, level: 2, scope: '', drillMode: false, hide: { insp: false, rej: false } };
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+// Hierarquia de datas (como no Power BI): 0 = Ano, 1 = Mês, 2 = Dia
+const LEVELS = ['Ano', 'Mês', 'Dia'];
+const keyAt = (iso, lv) => iso.slice(0, lv === 0 ? 4 : lv === 1 ? 7 : 10);
+const fmtKey = (k) => k.length === 4 ? k : k.length === 7 ? `${MONTHS[Number(k.slice(5)) - 1]}/${k.slice(0, 4)}` : fmtDate(k);
+const keyLabel = (k) => k.length === 10 ? fmtDate(k).slice(0, 5) : fmtKey(k);
 const monthEnd = (ym) => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
 const addDays = (iso, n) => new Date(Date.parse(iso) + n * 864e5).toISOString().slice(0, 10);
 const BAR_PAGE = 3;
@@ -564,7 +569,7 @@ function dashRows(facts, except) {
   const dsel = dash.f.defeito;
   const rows = facts.filter((f) =>
     (!dash.from || f.data >= dash.from) && (!dash.to || f.data <= dash.to) &&
-    Object.entries(dash.f).every(([d, set]) => d === except || !set.size || (d === 'defeito' ? [...set].some((x) => f.defs[x]) : set.has(f[d]))));
+    Object.entries(dash.f).every(([d, set]) => d === except || !set.size || (d === 'defeito' ? [...set].some((x) => f.defs[x]) : d === 'data' ? [...set].some((k) => f.data.startsWith(k)) : set.has(f[d]))));
   return except !== 'defeito' && dsel.size ? rows.map((f) => ({ ...f, rej: [...dsel].reduce((a, x) => a + (f.defs[x] || 0), 0) })) : rows;
 }
 
@@ -621,47 +626,51 @@ function smoothPath(pts, lo, hi) {
 
 const LINE_COLORS = { insp: '#083F78', rej: '#E5554B' };
 
-// Duas linhas (Inspeções e Reprovas, cada uma com seu eixo) ou, na métrica %, uma só com o índice de reprovação
-function lineSvg(points) { // points: [{ key, label, a }]
+// Duas linhas (Inspeções e Reprovas, cada uma com seu eixo) ou, na métrica %, uma só com o índice de reprovação.
+// Eixo de datas: pontos com `t` (0–1) ficam na posição real do tempo (dia a dia); sem `t`, espaçamento igual (ano/mês).
+function lineSvg(points) { // points: [{ key, label, tip, t, a }]
   const many = points.length > 12;
   const W = 640, H = 250, L = 42, R = 42, T = 26, B = many ? 52 : 32;
   const rate = (a) => a.insp ? (a.rej / a.insp) * 100 : 0;
-  const series = dash.metric === 'pct'
-    ? [{ side: 'L', color: LINE_COLORS.rej, vals: points.map((p) => rate(p.a)), fmt: fmtPct, tick: (v) => Math.round(v) + '%' }]
-    : [{ side: 'L', color: LINE_COLORS.insp, vals: points.map((p) => p.a.insp), fmt: String, tick: (v) => Math.round(v) },
-      { side: 'R', color: LINE_COLORS.rej, vals: points.map((p) => p.a.rej), fmt: String, tick: (v) => Math.round(v) }];
-  for (const s of series) s.max = Math.max(1, ...s.vals);
-  const base = H - B;
-  const IN = 16; // afastamento dos eixos para os valores das pontas não encostarem nos números do eixo
-  const step = points.length > 1 ? (W - L - R - 2 * IN) / (points.length - 1) : 0;
-  const px = (i) => points.length > 1 ? L + IN + i * step : (W + L - R) / 2;
+  const series = (dash.metric === 'pct'
+    ? [{ id: 'rej', color: LINE_COLORS.rej, vals: points.map((p) => rate(p.a)), fmt: fmtPct, tick: (v) => Math.round(v) + '%' }]
+    : [{ id: 'insp', color: LINE_COLORS.insp, vals: points.map((p) => p.a.insp), fmt: String, tick: (v) => Math.round(v) },
+      { id: 'rej', color: LINE_COLORS.rej, vals: points.map((p) => p.a.rej), fmt: String, tick: (v) => Math.round(v) }]
+  ).filter((s) => !dash.hide[s.id]);
+  series.forEach((s, k) => { s.side = k === 0 ? 'L' : 'R'; s.max = Math.max(1, ...s.vals); });
+  const base = H - B, IN = 16;
+  const n = points.length;
+  const px = (i) => n > 1 && points[i].t != null ? L + IN + points[i].t * (W - L - R - 2 * IN)
+    : n > 1 ? L + IN + (i / (n - 1)) * (W - L - R - 2 * IN) : (W + L - R) / 2;
   const py = (v, s) => T + (base - T) * (1 - v / s.max);
   const sel = dash.f.data, any = sel.size > 0;
-  const colW = Math.max(step, 22);
+  const isSel = (k) => [...sel].some((x) => x.startsWith(k) || k.startsWith(x));
+  const xs = points.map((p, i) => px(i));
+  const colW = Math.max(22, n > 1 ? Math.min(...xs.slice(1).map((x, i) => x - xs[i])) : 22);
   const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(series[0].max * f, series[0])}" y2="${py(series[0].max * f, series[0])}" stroke="#E8EEF5" stroke-dasharray="3 5"/>`).join('');
   const axes = series.map((s) => [0, 0.5, 1].map((f) => s.side === 'L'
     ? `<text x="${L - 8}" y="${py(s.max * f, s) + 4}" text-anchor="end" font-size="10" fill="${series.length > 1 ? s.color : '#8A9BB0'}">${s.tick(s.max * f)}</text>`
     : `<text x="${W - R + 8}" y="${py(s.max * f, s) + 4}" text-anchor="start" font-size="10" fill="${s.color}">${s.tick(s.max * f)}</text>`).join('')).join('');
-  const xy = (s) => points.map((p, i) => [px(i), py(s.vals[i], s)]);
-  const lines = points.length > 1 ? series.map((s, k) => {
-    const d = smoothPath(xy(s), T, base);
-    return (k === 0 ? `<path d="${d} L${px(points.length - 1)},${base} L${px(0)},${base} Z" fill="url(#g-area${k})"/>` : '') +
+  const lines = n > 1 ? series.map((s, k) => {
+    const pts = points.map((p, i) => [xs[i], py(s.vals[i], s)]);
+    const d = smoothPath(pts, T, base);
+    return (k === 0 ? `<path d="${d} L${xs[n - 1]},${base} L${xs[0]},${base} Z" fill="url(#g-area0)"/>` : '') +
       `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
   }).join('') : '';
   const defs = `<defs><linearGradient id="g-area0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${series[0].color}" stop-opacity=".18"/><stop offset="1" stop-color="${series[0].color}" stop-opacity="0"/></linearGradient></defs>`;
   const cols = points.map((p, i) => {
-    const on = sel.has(p.key), x = px(i);
-    const ys = series.map((s, k) => py(s.vals[i], s));
+    const on = isSel(p.key), x = xs[i];
+    const ys = series.map((s) => py(s.vals[i], s));
     const close = series.length > 1 && Math.abs(ys[0] - ys[1]) < 18;
     const upper = ys.length > 1 && ys[0] <= ys[1] ? 0 : 1;
     const marks = series.map((s, k) => {
-      const below = close && series.length > 1 && k !== upper;
-      const ly = below ? ys[k] + 16 : ys[k] - 9;
+      const ly = close && k !== upper ? ys[k] + 16 : ys[k] - 9;
       return `<circle cx="${x}" cy="${ys[k]}" r="${on ? 5 : 3.5}" fill="${on ? s.color : '#fff'}" stroke="${s.color}" stroke-width="2.2"/>` +
         `<text x="${x}" y="${ly}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${s.color}">${esc(s.fmt(s.vals[i]))}</text>`;
     }).join('');
-    return `<g data-dim="data" data-key="${esc(p.key)}" data-tip="${esc(dashTip(p.label, p.a))}" class="pt${on ? ' sel' : ''}${any && !on ? ' dim' : ''}" tabindex="0" role="button">` +
-      `<rect class="col" x="${x - colW / 2}" y="${T - 14}" width="${colW}" height="${base - T + 14}" fill="${on ? 'rgba(3,217,238,.12)' : 'transparent'}"/>${marks}</g>` +
+    return `<g data-dim="data" data-key="${esc(p.key)}" data-tip="${esc(dashTip(p.tip, p.a))}" class="pt${on ? ' sel' : ''}${any && !on ? ' dim' : ''}" tabindex="0" role="button">` +
+      `<rect class="col" x="${x - colW / 2}" y="${T - 14}" width="${colW}" height="${base - T + 14}" fill="${on ? 'rgba(3,217,238,.12)' : 'transparent'}"/>` +
+      `<line class="xh" x1="${x}" x2="${x}" y1="${T - 8}" y2="${base}" stroke="#9FB3C8" stroke-dasharray="3 3"/>${marks}</g>` +
       (many
         ? `<text x="${x}" y="${base + 14}" text-anchor="end" font-size="9.5" fill="#8A9BB0" transform="rotate(-45 ${x} ${base + 14})">${esc(p.label)}</text>`
         : `<text x="${x}" y="${base + 18}" text-anchor="middle" font-size="10" fill="#8A9BB0">${esc(p.label)}</text>`);
@@ -698,24 +707,43 @@ function dashInner() {
   const share = (v) => total ? fmtPct((v / total) * 100) : '—';
   const KPI_ICO = {"":"<path d=\"M9 3h6l1 2h3a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h3zM8 12l3 3 5-6\" />","ok":"<path d=\"M5 12l5 5L20 7\" />","bad":"<path d=\"M6 6l12 12M18 6L6 18\" />"};
   const kpi = (label, v, cls, sub) => `<div class="card kpi ${cls}"><i class="kpi-ico"><svg viewBox="0 0 24 24" aria-hidden="true">${KPI_ICO[cls]}</svg></i><div><span>${label}</span><b>${v}</b><small>${sub}</small></div></div>`;
-  const allPts = [...dashAgg(dashRows(facts, 'data'), 'data')].sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([k, a]) => ({ key: k, label: fmtDate(k).slice(0, 5), a }));
-  // Janelas de 7 ou 31 dias corridos a partir da primeira data; abre na mais recente
-  const N = dash.win === 'week' ? 7 : 31, t0 = allPts.length ? allPts[0].key : '';
-  const dIdx = (iso) => Math.floor((Date.parse(iso) - Date.parse(t0)) / 864e5 / N);
-  const nPages = allPts.length ? dIdx(allPts[allPts.length - 1].key) + 1 : 1;
-  const lp = dash.linePage == null ? nPages - 1 : Math.max(0, Math.min(dash.linePage, nPages - 1));
-  dash.lpCur = lp;
-  const pts = allPts.filter((p) => dIdx(p.key) === lp);
-  const wStart = t0 ? addDays(t0, lp * N) : '', wEnd = t0 ? addDays(t0, lp * N + N - 1) : '';
-  const linePager = nPages > 1
-    ? `<div class="pager"><button type="button" data-lpage="-1" aria-label="Janela anterior"${lp === 0 ? ' disabled' : ''}>‹</button><span>${fmtDate(wStart)} – ${fmtDate(wEnd)}</span><button type="button" data-lpage="1" aria-label="Próxima janela"${lp === nPages - 1 ? ' disabled' : ''}>›</button></div>` : '';
+  const grp = new Map();
+  for (const f of dashRows(facts, 'data').filter((x) => x.data.startsWith(dash.scope))) {
+    const k = keyAt(f.data, dash.level), a = grp.get(k) || { insp: 0, rej: 0 };
+    a.insp += f.insp; a.rej += f.rej;
+    grp.set(k, a);
+  }
+  const allPts = [...grp].sort((a, b) => a[0].localeCompare(b[0])).map(([k, a]) => ({ key: k, label: keyLabel(k), tip: fmtKey(k), t: null, a }));
+  // Nível Dia sem recorte: janelas de 7 ou 31 dias corridos a partir da primeira data (abre na mais recente) e eixo de tempo real
+  const useWin = dash.level === 2 && dash.scope.length < 7;
+  let pts = allPts, linePager = '', winUi = '';
+  if (useWin) {
+    const N = dash.win === 'week' ? 7 : 31, t0 = allPts.length ? allPts[0].key : '';
+    const dIdx = (iso) => Math.floor((Date.parse(iso) - Date.parse(t0)) / 864e5 / N);
+    const nPages = allPts.length ? dIdx(allPts[allPts.length - 1].key) + 1 : 1;
+    const lp = dash.linePage == null ? nPages - 1 : Math.max(0, Math.min(dash.linePage, nPages - 1));
+    dash.lpCur = lp;
+    const wStart = t0 ? addDays(t0, lp * N) : '', wEnd = t0 ? addDays(t0, lp * N + N - 1) : '';
+    const win = allPts.filter((p) => dIdx(p.key) === lp);
+    const d0 = win.length ? Date.parse(win[0].key) : 0, span = win.length ? Date.parse(win[win.length - 1].key) - d0 : 0;
+    pts = win.map((p) => ({ ...p, t: span ? (Date.parse(p.key) - d0) / span : null })); // eixo de tempo real, ajustado aos dados da janela
+    linePager = nPages > 1
+      ? `<div class="pager"><button type="button" data-lpage="-1" aria-label="Janela anterior"${lp === 0 ? ' disabled' : ''}>‹</button><span>${fmtDate(wStart)} – ${fmtDate(wEnd)}</span><button type="button" data-lpage="1" aria-label="Próxima janela"${lp === nPages - 1 ? ' disabled' : ''}>›</button></div>` : '';
+    winUi = `<div class="seg" role="group" aria-label="Intervalo"><button type="button" data-win="week" class="${dash.win === 'week' ? 'on' : ''}">Semanal</button><button type="button" data-win="month" class="${dash.win === 'month' ? 'on' : ''}">Mensal</button></div>`;
+  } else if (dash.level === 2 && allPts.length) {
+    const start = dash.scope + '-01', span = Number(monthEnd(dash.scope).slice(8)) - 1;
+    pts = allPts.map((p) => ({ ...p, t: (Date.parse(p.key) - Date.parse(start)) / 864e5 / Math.max(1, span) }));
+  }
+  const drill = `<div class="drill" role="group" aria-label="Hierarquia de datas"><button type="button" data-drill="up" title="Subir um nível"${dash.level === 0 ? ' disabled' : ''}>↑</button>` +
+    `<button type="button" data-drill="mode" title="Modo de detalhamento: clique em um ponto para detalhá-lo" class="${dash.drillMode ? 'on' : ''}"${dash.level === 2 ? ' disabled' : ''}>↓</button>` +
+    `<button type="button" data-drill="next" title="Ir para o próximo nível"${dash.level === 2 ? ' disabled' : ''}>⇊</button>` +
+    `<span class="drill-path">${LEVELS[dash.level]}${dash.scope ? ' · ' + fmtKey(dash.scope) : ''}</span></div>`;
   const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
   const curMonth = months.find((m) => dash.from === m + '-01' && dash.to === monthEnd(m)) || '';
   const monthSel = `<label>Mês <select id="d-month"><option value="">Todos os meses</option>${months.map((m) => `<option value="${m}"${m === curMonth ? ' selected' : ''}>${MONTHS[Number(m.slice(5)) - 1]}/${m.slice(0, 4)}</option>`).join('')}</select></label>`;
   const chips = [...(dash.from || dash.to ? [['range', `Período: ${dash.from ? fmtDate(dash.from) : '…'} a ${dash.to ? fmtDate(dash.to) : '…'}`]] : []),
     ...[['data', 'Data'], ...DIMS.map(([d, t]) => [d, t])].filter(([d]) => dash.f[d].size)
-      .map(([d, t]) => [d, `${t}: ${[...dash.f[d]].map((v) => (d === 'data' ? fmtDate(v) : v)).join(', ')}`])];
+      .map(([d, t]) => [d, `${t}: ${[...dash.f[d]].map((v) => (d === 'data' ? fmtKey(v) : v)).join(', ')}`])];
   return `<div class="dash-bar">` +
     `${monthSel}<label>De <input type="date" id="d-from" value="${esc(dash.from)}" min="${dates[0]}" max="${dates[dates.length - 1]}"></label>` +
     `<label>até <input type="date" id="d-to" value="${esc(dash.to)}" min="${dates[0]}" max="${dates[dates.length - 1]}"></label>` +
@@ -726,8 +754,8 @@ function dashInner() {
     (chips.length ? `<div class="chips">${chips.map(([d, t]) => `<span class="chip">${esc(t)}<button type="button" data-clear="${d}" aria-label="Remover filtro">×</button></span>`).join('')}</div>` : '') +
     `<div class="kpis">${kpi('Inspecionados', total, '', 'no filtro atual')}${kpi('Aprovados', apr, 'ok', share(apr) + ' do total')}${kpi('Reprovados', rep, 'bad', share(rep) + ' do total')}</div>` +
     `<div class="dash-top"><div class="card"><div class="card-head"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Inspeções e reprovas'} por data</h3>` +
-    `<div class="legend">${dash.metric === 'pct' ? '' : '<span><i style="background:' + LINE_COLORS.insp + '"></i>Inspeções</span>'}<span><i style="background:${LINE_COLORS.rej}"></i>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovas'}</span></div>` +
-    `<div class="seg" role="group" aria-label="Intervalo"><button type="button" data-win="week" class="${dash.win === 'week' ? 'on' : ''}">Semanal</button><button type="button" data-win="month" class="${dash.win === 'month' ? 'on' : ''}">Mensal</button></div></div>` +
+    `<div class="legend">${dash.metric === 'pct' ? '' : `<button type="button" data-ser="insp" class="${dash.hide.insp ? 'off' : ''}"><i style="background:${LINE_COLORS.insp}"></i>Inspeções</button>`}<button type="button" data-ser="rej" class="${dash.hide.rej ? 'off' : ''}"><i style="background:${LINE_COLORS.rej}"></i>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovas'}</button></div>` +
+    `${drill}${winUi}</div>` +
     `${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}${linePager}</div>` +
     `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
     `<div class="dash-bars">${DIMS.map(([d, t]) => barsHtml(d, t, facts)).join('')}</div>` +
@@ -757,6 +785,7 @@ function mountDashboard() {
   const update = () => { if (dashTipEl) dashTipEl.hidden = true; root.innerHTML = dashInner(); };
   if (!dashTipEl) { dashTipEl = document.createElement('div'); dashTipEl.className = 'dash-tip'; dashTipEl.hidden = true; document.body.appendChild(dashTipEl); }
   const pick = (el, multi) => {
+    if (el.dataset.dim === 'data' && dash.drillMode && dash.level < 2) { dash.scope = el.dataset.key; dash.level++; dash.linePage = null; update(); return; }
     const set = dash.f[el.dataset.dim], k = el.dataset.key;
     if (multi) set.has(k) ? set.delete(k) : set.add(k);
     else if (set.size === 1 && set.has(k)) set.clear();
@@ -764,8 +793,20 @@ function mountDashboard() {
     update();
   };
   root.addEventListener('click', (ev) => {
-    const t = ev.target.closest('[data-dim],[data-metric],[data-clear],[data-page],[data-win],[data-lpage]');
+    const t = ev.target.closest('[data-dim],[data-metric],[data-clear],[data-page],[data-win],[data-lpage],[data-drill],[data-ser]');
     if (!t) return;
+    if (t.dataset.ser) {
+      const o = t.dataset.ser === 'insp' ? 'rej' : 'insp';
+      if (dash.metric !== 'pct' && !dash.hide[o]) dash.hide[t.dataset.ser] = !dash.hide[t.dataset.ser];
+      update(); return;
+    }
+    if (t.dataset.drill) {
+      const d = t.dataset.drill;
+      if (d === 'mode') dash.drillMode = !dash.drillMode;
+      else if (d === 'up' && dash.level > 0) { dash.level--; dash.scope = dash.scope.length > 4 ? dash.scope.slice(0, 4) : ''; }
+      else if (d === 'next' && dash.level < 2) dash.level++;
+      dash.linePage = null; update(); return;
+    }
     if (t.dataset.win) { dash.win = t.dataset.win; dash.linePage = null; update(); return; }
     if (t.dataset.lpage) { dash.linePage = dash.lpCur + Number(t.dataset.lpage); update(); return; }
     if (t.dataset.page) { dash.page[t.dataset.page] = (dash.page[t.dataset.page] || 0) + Number(t.dataset.d); update(); return; }
