@@ -363,3 +363,10 @@ td.actions{text-align:right;white-space:nowrap}
 .dash-title{display:flex;align-items:center;gap:20px}
 .fs-logo{display:none;height:36px;width:auto}
 #dash-wrap:fullscreen .fs-logo{display:block;padding-right:20px;border-right:1px solid var(--ring)}
+
+/* Legenda do gráfico de linha */
+.legend{display:flex;gap:14px;margin-left:auto;align-self:center;font-size:.78rem;font-weight:600;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:4px;border-radius:2px;display:inline-block}
+.pt .col{transition:fill .12s}
+.pt:hover .col{fill:rgba(3,217,238,.08)}

@@ -619,32 +619,54 @@ function smoothPath(pts, lo, hi) {
   return d;
 }
 
+const LINE_COLORS = { insp: '#083F78', rej: '#E5554B' };
+
+// Duas linhas (Inspeções e Reprovas, cada uma com seu eixo) ou, na métrica %, uma só com o índice de reprovação
 function lineSvg(points) { // points: [{ key, label, a }]
-  const W = 640, H = 220, L = 40, B = 28, T = 14, R = 14;
-  const vals = points.map((p) => dashVal(p.a));
-  const max = Math.max(1, ...vals);
-  const step = points.length > 1 ? (W - L - R) / (points.length - 1) : 0;
-  const px = (i) => points.length > 1 ? L + i * step : (W + L - R) / 2;
-  const py = (v) => T + (H - T - B) * (1 - v / max);
-  const every = Math.ceil(points.length / 8);
-  const sel = dash.f.data, any = sel.size > 0;
-  const xy = points.map((p, i) => [px(i), py(vals[i])]);
+  const many = points.length > 12;
+  const W = 640, H = 250, L = 42, R = 42, T = 26, B = many ? 52 : 32;
+  const rate = (a) => a.insp ? (a.rej / a.insp) * 100 : 0;
+  const series = dash.metric === 'pct'
+    ? [{ side: 'L', color: LINE_COLORS.rej, vals: points.map((p) => rate(p.a)), fmt: fmtPct, tick: (v) => Math.round(v) + '%' }]
+    : [{ side: 'L', color: LINE_COLORS.insp, vals: points.map((p) => p.a.insp), fmt: String, tick: (v) => Math.round(v) },
+      { side: 'R', color: LINE_COLORS.rej, vals: points.map((p) => p.a.rej), fmt: String, tick: (v) => Math.round(v) }];
+  for (const s of series) s.max = Math.max(1, ...s.vals);
   const base = H - B;
-  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Reprovações por data">` +
-    `<defs><linearGradient id="g-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#03D9EE" stop-opacity=".35"/><stop offset="1" stop-color="#03D9EE" stop-opacity="0"/></linearGradient>` +
-    `<linearGradient id="g-line" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#083F78"/><stop offset="1" stop-color="#00B8CC"/></linearGradient></defs>` +
-    [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(max * f)}" y2="${py(max * f)}" stroke="#E8EEF5" stroke-dasharray="3 5"/><text x="${L - 8}" y="${py(max * f) + 4}" text-anchor="end" font-size="10" fill="#8A9BB0">${dash.metric === 'pct' ? Math.round(max * f) + '%' : Math.round(max * f)}</text>`).join('') +
-    (points.length > 1
-      ? `<path d="${smoothPath(xy, T, base)} L${xy[xy.length - 1][0]},${base} L${xy[0][0]},${base} Z" fill="url(#g-area)"/>` +
-        `<path d="${smoothPath(xy, T, base)}" fill="none" stroke="url(#g-line)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
-      : '') +
-    points.map((p, i) => {
-      const on = sel.has(p.key);
-      return `<g data-dim="data" data-key="${esc(p.key)}" data-tip="${esc(dashTip(p.label, p.a))}" class="pt${on ? ' sel' : ''}${any && !on ? ' dim' : ''}" tabindex="0" role="button">` +
-        `<circle cx="${px(i)}" cy="${py(vals[i])}" r="14" fill="transparent"/>` +
-        `<circle class="dot" cx="${px(i)}" cy="${py(vals[i])}" r="${on ? 6 : 4}" fill="${on ? '#083F78' : '#fff'}" stroke="${on ? '#fff' : '#00B8CC'}" stroke-width="2.5"/></g>` +
-        (i % every === 0 ? `<text x="${px(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#8A9BB0">${esc(p.label)}</text>` : '');
-    }).join('') + '</svg>';
+  const IN = 16; // afastamento dos eixos para os valores das pontas não encostarem nos números do eixo
+  const step = points.length > 1 ? (W - L - R - 2 * IN) / (points.length - 1) : 0;
+  const px = (i) => points.length > 1 ? L + IN + i * step : (W + L - R) / 2;
+  const py = (v, s) => T + (base - T) * (1 - v / s.max);
+  const sel = dash.f.data, any = sel.size > 0;
+  const colW = Math.max(step, 22);
+  const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${py(series[0].max * f, series[0])}" y2="${py(series[0].max * f, series[0])}" stroke="#E8EEF5" stroke-dasharray="3 5"/>`).join('');
+  const axes = series.map((s) => [0, 0.5, 1].map((f) => s.side === 'L'
+    ? `<text x="${L - 8}" y="${py(s.max * f, s) + 4}" text-anchor="end" font-size="10" fill="${series.length > 1 ? s.color : '#8A9BB0'}">${s.tick(s.max * f)}</text>`
+    : `<text x="${W - R + 8}" y="${py(s.max * f, s) + 4}" text-anchor="start" font-size="10" fill="${s.color}">${s.tick(s.max * f)}</text>`).join('')).join('');
+  const xy = (s) => points.map((p, i) => [px(i), py(s.vals[i], s)]);
+  const lines = points.length > 1 ? series.map((s, k) => {
+    const d = smoothPath(xy(s), T, base);
+    return (k === 0 ? `<path d="${d} L${px(points.length - 1)},${base} L${px(0)},${base} Z" fill="url(#g-area${k})"/>` : '') +
+      `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }).join('') : '';
+  const defs = `<defs><linearGradient id="g-area0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${series[0].color}" stop-opacity=".18"/><stop offset="1" stop-color="${series[0].color}" stop-opacity="0"/></linearGradient></defs>`;
+  const cols = points.map((p, i) => {
+    const on = sel.has(p.key), x = px(i);
+    const ys = series.map((s, k) => py(s.vals[i], s));
+    const close = series.length > 1 && Math.abs(ys[0] - ys[1]) < 18;
+    const upper = ys.length > 1 && ys[0] <= ys[1] ? 0 : 1;
+    const marks = series.map((s, k) => {
+      const below = close && series.length > 1 && k !== upper;
+      const ly = below ? ys[k] + 16 : ys[k] - 9;
+      return `<circle cx="${x}" cy="${ys[k]}" r="${on ? 5 : 3.5}" fill="${on ? s.color : '#fff'}" stroke="${s.color}" stroke-width="2.2"/>` +
+        `<text x="${x}" y="${ly}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${s.color}">${esc(s.fmt(s.vals[i]))}</text>`;
+    }).join('');
+    return `<g data-dim="data" data-key="${esc(p.key)}" data-tip="${esc(dashTip(p.label, p.a))}" class="pt${on ? ' sel' : ''}${any && !on ? ' dim' : ''}" tabindex="0" role="button">` +
+      `<rect class="col" x="${x - colW / 2}" y="${T - 14}" width="${colW}" height="${base - T + 14}" fill="${on ? 'rgba(3,217,238,.12)' : 'transparent'}"/>${marks}</g>` +
+      (many
+        ? `<text x="${x}" y="${base + 14}" text-anchor="end" font-size="9.5" fill="#8A9BB0" transform="rotate(-45 ${x} ${base + 14})">${esc(p.label)}</text>`
+        : `<text x="${x}" y="${base + 18}" text-anchor="middle" font-size="10" fill="#8A9BB0">${esc(p.label)}</text>`);
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart" role="img" aria-label="Inspeções e reprovas por data">${defs}${grid}${axes}${lines}${cols}</svg>`;
 }
 
 function barsHtml(dim, title, facts) {
@@ -703,7 +725,8 @@ function dashInner() {
     `</div>` +
     (chips.length ? `<div class="chips">${chips.map(([d, t]) => `<span class="chip">${esc(t)}<button type="button" data-clear="${d}" aria-label="Remover filtro">×</button></span>`).join('')}</div>` : '') +
     `<div class="kpis">${kpi('Inspecionados', total, '', 'no filtro atual')}${kpi('Aprovados', apr, 'ok', share(apr) + ' do total')}${kpi('Reprovados', rep, 'bad', share(rep) + ' do total')}</div>` +
-    `<div class="dash-top"><div class="card"><div class="card-head"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovações'} por data</h3>` +
+    `<div class="dash-top"><div class="card"><div class="card-head"><h3>${dash.metric === 'pct' ? '% de reprovação' : 'Inspeções e reprovas'} por data</h3>` +
+    `<div class="legend">${dash.metric === 'pct' ? '' : '<span><i style="background:' + LINE_COLORS.insp + '"></i>Inspeções</span>'}<span><i style="background:${LINE_COLORS.rej}"></i>${dash.metric === 'pct' ? '% de reprovação' : 'Reprovas'}</span></div>` +
     `<div class="seg" role="group" aria-label="Intervalo"><button type="button" data-win="week" class="${dash.win === 'week' ? 'on' : ''}">Semanal</button><button type="button" data-win="month" class="${dash.win === 'month' ? 'on' : ''}">Mensal</button></div></div>` +
     `${pts.length ? lineSvg(pts) : '<div class="empty">Sem dados para os filtros atuais.</div>'}${linePager}</div>` +
     `<div class="card gauge-card"><h3>Índice de reprovação</h3>${gaugeSvg(total ? (rep / total) * 100 : 0)}</div></div>` +
