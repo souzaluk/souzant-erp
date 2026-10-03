@@ -532,8 +532,8 @@ function mountHome() {
 const fmtPct = (n) => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
 const fmtDate = (iso) => String(iso).split('-').reverse().join('/');
 
-const DIMS = [['colaborador', 'Colaboradores'], ['montadora', 'Montadoras'], ['peca', 'Peças'], ['posto', 'Postos de trabalho'], ['projeto', 'Projetos']];
-const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set() }, from: '', to: '', metric: 'qtd', page: {}, win: 'week', linePage: null, lpCur: 0 };
+const DIMS = [['colaborador', 'Colaboradores'], ['montadora', 'Montadoras'], ['peca', 'Peças'], ['posto', 'Postos de trabalho'], ['projeto', 'Projetos'], ['defeito', 'Defeitos']];
+const dash = { f: { data: new Set(), colaborador: new Set(), montadora: new Set(), peca: new Set(), posto: new Set(), projeto: new Set(), defeito: new Set() }, from: '', to: '', metric: 'qtd', page: {}, win: 'week', linePage: null, lpCur: 0 };
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const monthEnd = (ym) => { const [y, m] = ym.split('-').map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`; };
 const addDays = (iso, n) => new Date(Date.parse(iso) + n * 864e5).toISOString().slice(0, 10);
@@ -544,21 +544,40 @@ function dashFacts() {
   const nm = (entity, code) => { const x = findRec(entity, code); return x ? recName(x) : `#${code}`; };
   return db.all('inspecoes').map((r) => {
     const p = findRec('pecas', r.peca);
+    const defs = {};
+    for (const x of Array.isArray(r.reprovas) ? r.reprovas : []) { const n = nm('defeitos', x.defeito); defs[n] = (defs[n] || 0) + (Number(x.qtd) || 0); }
     return {
       data: r.data, insp: inspOf(r), rej: rejOf(r),
       colaborador: nm('colaboradores', r.colaborador),
       posto: nm('postos', r.posto),
       peca: p ? `${p.codigo} - ${p.descricao}` : `#${r.peca}`,
       montadora: p ? nm('montadoras', p.montadora) : '(sem peça)',
-      projeto: p ? nm('projetos', p.projeto) : '(sem peça)'
+      projeto: p ? nm('projetos', p.projeto) : '(sem peça)',
+      defs
     };
   });
 }
 
 // Linhas visíveis aplicando o período e os filtros de todas as dimensões, menos `except` (o próprio visual continua completo e só destaca a seleção)
-const dashRows = (facts, except) => facts.filter((f) =>
-  (!dash.from || f.data >= dash.from) && (!dash.to || f.data <= dash.to) &&
-  Object.entries(dash.f).every(([d, set]) => d === except || !set.size || set.has(f[d])));
+// Defeito é multivalorado (uma inspeção pode ter vários): filtra inspeções que o contenham e, nos demais visuais, conta só a qtde desses defeitos
+function dashRows(facts, except) {
+  const dsel = dash.f.defeito;
+  const rows = facts.filter((f) =>
+    (!dash.from || f.data >= dash.from) && (!dash.to || f.data <= dash.to) &&
+    Object.entries(dash.f).every(([d, set]) => d === except || !set.size || (d === 'defeito' ? [...set].some((x) => f.defs[x]) : set.has(f[d]))));
+  return except !== 'defeito' && dsel.size ? rows.map((f) => ({ ...f, rej: [...dsel].reduce((a, x) => a + (f.defs[x] || 0), 0) })) : rows;
+}
+
+// Por defeito: qtde reprovada do defeito; o % é sobre o total inspecionado (contribuição para o índice geral)
+function defAgg(rows) {
+  const m = new Map(), insp = rows.reduce((a, f) => a + f.insp, 0);
+  for (const f of rows) for (const [n, q] of Object.entries(f.defs)) {
+    const a = m.get(n) || { insp, rej: 0 };
+    a.rej += q;
+    m.set(n, a);
+  }
+  return m;
+}
 
 function dashAgg(rows, dim) {
   const m = new Map();
@@ -629,7 +648,7 @@ function lineSvg(points) { // points: [{ key, label, a }]
 }
 
 function barsHtml(dim, title, facts) {
-  const m = dashAgg(dashRows(facts, dim), dim), sel = dash.f[dim];
+  const m = dim === 'defeito' ? defAgg(dashRows(facts, dim)) : dashAgg(dashRows(facts, dim), dim), sel = dash.f[dim];
   const all = [...m].filter(([k, a]) => dash.metric === 'pct' ? a.insp > 0 : a.rej > 0 || sel.has(k))
     .sort((x, y) => dashVal(y[1]) - dashVal(x[1]) || x[0].localeCompare(y[0]));
   const pages = Math.max(1, Math.ceil(all.length / BAR_PAGE));
